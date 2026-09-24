@@ -1,0 +1,11 @@
+{
+  "name": "bellows-construction",
+  "version": "1.0.0",
+  "description": "Расчёт меха для крупноформатной камеры: геометрия, чертёж, развёртка, 3D и STL плашек",
+  "private": true,
+  "license": "GPL-3.0",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "npx --yes serve -l 8080 ."
+  }
+}

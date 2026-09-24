@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Расчёт меха</title>
+  <meta name="description" content="Расчёт меха для крупноформатной камеры: геометрия, чертёж, развёртка, 3D-модель и STL плашек для печати">
+  <link rel="stylesheet" href="css/style.css">
+  <style id="page-style"></style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 40 24" width="40" height="24" aria-hidden="true">
+        <path d="M2 6 L8 2 L12 22 L18 2 L22 22 L28 2 L32 22 L38 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <h1>Расчёт меха</h1>
+        <p>крупноформатная камера · развёртка · плашки для 3D-печати</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button type="button" id="btn-save-json" class="ghost">Сохранить параметры</button>
+      <label class="ghost file-btn">Загрузить…<input type="file" id="file-json" accept=".json,application/json" hidden></label>
+      <button type="button" id="btn-reset" class="ghost">Сбросить</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="params" id="params" aria-label="Параметры меха"></aside>
+
+    <section class="workspace">
+      <div class="summary" id="summary"></div>
+      <div id="messages" class="messages" aria-live="polite"></div>
+
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="drawing" class="active">Чертёж</button>
+        <button role="tab" data-tab="pattern">Развёртка</button>
+        <button role="tab" data-tab="view3d">3D-модель</button>
+        <button role="tab" data-tab="stl">Плашки (STL)</button>
+      </nav>
+
+      <div class="tab-panel active" id="tab-drawing">
+        <div class="toolbar">
+          <button type="button" data-action="drawing-svg">Скачать SVG</button>
+          <span class="hint">Колесо — масштаб, перетаскивание — сдвиг, двойной щелчок — вписать.</span>
+        </div>
+        <div class="svg-view" id="drawing-view"></div>
+      </div>
+
+      <div class="tab-panel" id="tab-pattern">
+        <div class="toolbar">
+          <label class="check"><input type="checkbox" id="pat-stiff" checked> плашки</label>
+          <label class="check"><input type="checkbox" id="pat-labels" checked> подписи</label>
+          <span class="sep"></span>
+          <button type="button" data-action="pattern-svg">SVG 1:1</button>
+          <button type="button" data-action="pattern-dxf">DXF</button>
+          <span class="sep"></span>
+          <label>Печать на
+            <select id="print-paper">
+              <option value="A4">A4</option>
+              <option value="A3">A3</option>
+              <option value="A2">A2</option>
+            </select>
+          </label>
+          <button type="button" data-action="pattern-print">Печать 1:1 плиткой</button>
+          <span class="hint" id="print-hint"></span>
+        </div>
+        <div class="svg-view" id="pattern-view"></div>
+      </div>
+
+      <div class="tab-panel" id="tab-view3d">
+        <div class="toolbar">
+          <label class="range">Растяжение
+            <input type="range" id="ext-range" min="0" max="100" step="0.5">
+            <output id="ext-out"></output>
+          </label>
+          <label class="check"><input type="checkbox" id="v-fabric" checked> материал</label>
+          <label class="check"><input type="checkbox" id="v-stiff" checked> плашки</label>
+          <label class="check"><input type="checkbox" id="v-edges" checked> рёбра</label>
+          <span class="sep"></span>
+          <button type="button" data-action="mesh-stl">STL поверхности меха</button>
+          <button type="button" data-action="view-png">PNG</button>
+          <button type="button" data-action="view-reset" class="ghost">Исходный вид</button>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="gl"></canvas>
+          <div class="canvas-hint">ЛКМ — вращать · ПКМ/Shift — сдвиг · колесо — масштаб</div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-stl">
+        <div class="toolbar">
+          <label>Режим
+            <select id="stl-mode">
+              <option value="bed">раскладка на стол принтера</option>
+              <option value="panels">по сторонам, как в развёртке</option>
+              <option value="pattern">вся развёртка одним файлом</option>
+            </select>
+          </label>
+          <label>Стол <input type="number" id="bed-w" value="220" min="50" step="1" class="short"> × <input type="number" id="bed-h" value="220" min="50" step="1" class="short"> мм</label>
+          <label>Промежуток <input type="number" id="bed-gap" value="2" min="0.5" step="0.5" class="short"> мм</label>
+          <span class="sep"></span>
+          <button type="button" data-action="stl-export" class="primary">Скачать STL</button>
+        </div>
+        <div class="stl-info" id="stl-info"></div>
+        <div class="svg-view" id="stl-view"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="print-area" aria-hidden="true"></div>
+
+  <script src="js/geometry.js"></script>
+  <script src="js/exporters.js"></script>
+  <script src="js/viewer3d.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

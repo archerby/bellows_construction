@@ -1,0 +1,135 @@
+:root {
+  --bg: #f3f3f1;
+  --panel: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6b6b70;
+  --line: #dcdcd8;
+  --accent: #b5561c;
+  --accent-ink: #ffffff;
+  --warn-bg: #fff6e0;
+  --warn-line: #e8c46a;
+  --err-bg: #fde8e6;
+  --err-line: #e0877f;
+  --view-bg: #fbfbfa;
+  --radius: 8px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1d;
+    --panel: #242427;
+    --ink: #ececef;
+    --muted: #a0a0a8;
+    --line: #3a3a3f;
+    --accent: #e0864a;
+    --accent-ink: #1b1b1d;
+    --warn-bg: #3a3120;
+    --warn-line: #8a6d2a;
+    --err-bg: #3d2322;
+    --err-line: #8f4540;
+    --view-bg: #fbfbfa;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); }
+button, input, select { font: inherit; color: inherit; }
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 12px; color: var(--accent); }
+.brand h1 { margin: 0; font-size: 18px; color: var(--ink); }
+.brand p { margin: 0; font-size: 12px; color: var(--muted); }
+.top-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+button, .file-btn {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 6px;
+  padding: 5px 10px; cursor: pointer; font-size: 13px; line-height: 1.3;
+}
+button:hover, .file-btn:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.ghost, .file-btn.ghost { background: transparent; }
+
+.layout { display: grid; grid-template-columns: 330px 1fr; min-height: calc(100vh - 58px); }
+
+.params {
+  background: var(--panel); border-right: 1px solid var(--line); padding: 12px 14px 24px;
+  overflow-y: auto; max-height: calc(100vh - 58px); position: sticky; top: 0;
+}
+.params fieldset { border: none; padding: 0; margin: 0 0 14px; }
+.params legend { font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 6px; }
+.field { display: grid; grid-template-columns: 1fr 92px; align-items: center; gap: 6px; margin: 4px 0; font-size: 13px; }
+.field.pair { grid-template-columns: 1fr 70px 12px 70px; }
+.field.pair span.x { text-align: center; color: var(--muted); }
+.field input[type=number], .field select {
+  width: 100%; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); text-align: right;
+}
+.field select { text-align: left; }
+.field.wide { grid-template-columns: 1fr; }
+.field .hint, .hint { color: var(--muted); font-size: 12px; }
+.field-hint { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; margin-top: -2px; line-height: 1.3; }
+.params .preset { width: 100%; }
+
+.workspace { padding: 12px 16px 24px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+.card .k { font-size: 11.5px; color: var(--muted); }
+.card .v { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.card .s { font-size: 11.5px; color: var(--muted); }
+
+.messages { display: flex; flex-direction: column; gap: 6px; }
+.msg { padding: 7px 10px; border-radius: 6px; font-size: 13px; border: 1px solid; }
+.msg.warn { background: var(--warn-bg); border-color: var(--warn-line); }
+.msg.err { background: var(--err-bg); border-color: var(--err-line); }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.tabs button { border: none; border-bottom: 3px solid transparent; border-radius: 0; background: none; padding: 8px 12px; font-weight: 600; color: var(--muted); }
+.tabs button.active { color: var(--ink); border-bottom-color: var(--accent); }
+
+.tab-panel { display: none; flex-direction: column; gap: 8px; }
+.tab-panel.active { display: flex; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.toolbar .sep { width: 1px; height: 20px; background: var(--line); }
+.toolbar input.short { width: 64px; padding: 3px 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); }
+.toolbar select { padding: 3px 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); }
+.check { display: inline-flex; gap: 4px; align-items: center; }
+.range { display: inline-flex; gap: 6px; align-items: center; }
+.range input { width: 220px; }
+.range output { font-variant-numeric: tabular-nums; min-width: 70px; }
+
+.svg-view {
+  background: var(--view-bg); border: 1px solid var(--line); border-radius: var(--radius);
+  height: calc(100vh - 290px); min-height: 380px; overflow: hidden; position: relative; touch-action: none; cursor: grab;
+}
+.svg-view:active { cursor: grabbing; }
+.svg-view > svg { width: 100%; height: 100%; display: block; }
+
+.canvas-wrap { position: relative; height: calc(100vh - 290px); min-height: 380px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.canvas-wrap canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.canvas-hint { position: absolute; left: 10px; bottom: 8px; font-size: 11.5px; color: #777; pointer-events: none; }
+
+.stl-info { font-size: 13px; color: var(--muted); }
+.stl-info b { color: var(--ink); }
+
+#print-area { display: none; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .params { position: static; max-height: none; border-right: none; border-bottom: 1px solid var(--line); }
+  .svg-view, .canvas-wrap { height: 70vh; }
+}
+
+@media print {
+  body > *:not(#print-area) { display: none !important; }
+  html, body { background: #fff; }
+  #print-area { display: block; }
+  .print-page { page-break-after: always; break-after: page; }
+  .print-page:last-child { page-break-after: auto; break-after: auto; }
+  .print-page svg { display: block; }
+}
