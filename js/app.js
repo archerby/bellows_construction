@@ -3,6 +3,8 @@
   'use strict';
   const Geo = window.BellowsGeometry;
   const Ex = window.BellowsExport;
+  const Cam = window.BellowsCamera;
+  const CSGM = window.BellowsCSG.M;
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const STORAGE_KEY = 'bellows.params.v1';
@@ -53,18 +55,60 @@
   ];
 
   const PRESETS = {
-    '4x5t': { name: '4×5″ конический', frontW: 100, frontH: 100, rearW: 150, rearH: 150, maxExt: 400, pitch: 12 },
-    '4x5s': { name: '4×5″ прямой', frontW: 150, frontH: 150, rearW: 150, rearH: 150, maxExt: 400, pitch: 12 },
-    '4x5w': { name: '4×5″ широкоугольный (короткий)', frontW: 130, frontH: 130, rearW: 150, rearH: 150, maxExt: 180, pitch: 10 },
-    '5x7t': { name: '5×7″ конический', frontW: 120, frontH: 120, rearW: 210, rearH: 210, maxExt: 480, pitch: 14 },
-    '8x10t': { name: '8×10″ конический', frontW: 160, frontH: 160, rearW: 310, rearH: 310, maxExt: 650, pitch: 16 },
+    '4x5t': { name: '4×5″ конический', frontW: 100, frontH: 100, rearW: 150, rearH: 150, maxExt: 400, pitch: 12, camFormat: '4x5' },
+    '4x5s': { name: '4×5″ прямой', frontW: 150, frontH: 150, rearW: 150, rearH: 150, maxExt: 400, pitch: 12, camFormat: '4x5' },
+    '4x5w': { name: '4×5″ широкоугольный (короткий)', frontW: 130, frontH: 130, rearW: 150, rearH: 150, maxExt: 180, pitch: 10, camFormat: '4x5' },
+    '5x7t': { name: '5×7″ конический', frontW: 120, frontH: 120, rearW: 210, rearH: 210, maxExt: 480, pitch: 14, camFormat: '5x7' },
+    '8x10t': { name: '8×10″ конический', frontW: 160, frontH: 160, rearW: 310, rearH: 310, maxExt: 650, pitch: 16, camFormat: '8x10' },
     '6x9t': { name: '6×9 / 6×12 (среднеформатный задник)', frontW: 80, frontH: 80, rearW: 120, rearH: 100, maxExt: 260, pitch: 9 },
   };
 
-  let params = Object.assign({}, Geo.DEFAULTS);
+  const opts = (obj) => Object.entries(obj).map(([k, v]) => [k, v.name]);
+  const CAM_SCHEMA = [
+    {
+      legend: 'Формат и кассеты',
+      fields: [
+        { key: 'camFormat', label: 'Формат', type: 'select', options: opts(Cam.FORMATS) },
+        { key: 'camHolderW', label: 'Ширина кассеты, мм', step: 0.1, hint: '0 — справочное значение для формата. Лучше измерить свою кассету.' },
+        { key: 'camFilmDepth', label: 'Глубина плоскости плёнки, мм', step: 0.05, hint: 'От лицевой плоскости кассеты до плёнки. 0 — справочное. Определяет резкость!' },
+        { key: 'camGroove', label: 'Канавка светового замка', type: 'select', options: [['true', 'есть'], ['false', 'нет (флок/уплотнитель)']] },
+        { key: 'camGlassT', label: 'Толщина матового стекла, мм', step: 0.1 },
+      ],
+    },
+    {
+      legend: 'Объектив',
+      fields: [
+        { key: 'camBoard', label: 'Объективная плата', type: 'select', options: opts(Cam.BOARDS) },
+        { pair: ['camBoardW', 'camBoardH'], label: 'Своя плата, Ш × В' },
+        { key: 'camShutter', label: 'Затвор', type: 'select', options: opts(Cam.SHUTTERS) },
+        { key: 'camShutterD', label: 'Свой диаметр затвора, мм', step: 0.1 },
+      ],
+    },
+    {
+      legend: 'Рельс и подвижки',
+      fields: [
+        { key: 'camRail', label: 'Профиль', type: 'select', options: opts(Cam.RAILS) },
+        { key: 'camRailLength', label: 'Длина рельса, мм', hint: '0 — подобрать по растяжению меха.' },
+        { key: 'camRise', label: 'Подъём/опускание, ±мм', hint: 'Передняя рамка. Сдвиг и поворот — у обеих стоек, наклон — у обеих рамок.' },
+        { key: 'camShift', label: 'Сдвиг вбок, ±мм' },
+        { key: 'camTripod', label: 'Штативная резьба', type: 'select', options: opts(Cam.TRIPOD) },
+      ],
+    },
+    {
+      legend: 'Печать',
+      fields: [
+        { key: 'camClearance', label: 'Зазор посадок, мм', step: 0.05, hint: 'Добавляется к отверстиям под гайки и платам. 0,2–0,4 мм для FDM.' },
+      ],
+    },
+  ];
+
+  let params = Object.assign({}, Geo.DEFAULTS, Cam.CAM_DEFAULTS);
+  let camera = null;
+  let camViewer = null;
+  let camExt = null;
   let model = null;
   let activeTab = 'drawing';
-  const dirty = { drawing: true, pattern: true, view3d: true, stl: true };
+  const dirty = { drawing: true, pattern: true, view3d: true, stl: true, camera: true };
   let viewer = null;
   let extValue = null;
 
@@ -96,7 +140,7 @@
       if (!pr) return;
       const copy = Object.assign({}, pr);
       delete copy.name;
-      params = Object.assign({}, Geo.DEFAULTS, copy);
+      params = Object.assign({}, params, Geo.DEFAULTS, copy);
       fillForm();
       update();
     });
@@ -110,7 +154,26 @@
     pf.appendChild(note);
     root.appendChild(pf);
 
-    for (const group of SCHEMA) {
+    buildGroups(root, SCHEMA);
+    buildGroups($('#cam-params'), CAM_SCHEMA);
+    attachInput(root);
+    attachInput($('#cam-params'));
+  }
+
+  function attachInput(root) {
+    let timer = null;
+    root.addEventListener('input', (e) => {
+      const key = e.target.dataset && e.target.dataset.key;
+      if (!key) return;
+      params[key] = e.target.value;
+      if (!key.startsWith('cam')) $('#preset').value = '';
+      clearTimeout(timer);
+      timer = setTimeout(update, 150);
+    });
+  }
+
+  function buildGroups(root, schema) {
+    for (const group of schema) {
       const fs = document.createElement('fieldset');
       const lg = document.createElement('legend');
       lg.textContent = group.legend;
@@ -130,6 +193,7 @@
           x.textContent = '×';
           row.append(a, x, b);
         } else if (f.type === 'select') {
+          row.classList.add('sel');
           const s = document.createElement('select');
           s.id = 'p-' + f.key;
           s.dataset.key = f.key;
@@ -151,19 +215,10 @@
       }
       root.appendChild(fs);
     }
-    let timer = null;
-    root.addEventListener('input', (e) => {
-      const key = e.target.dataset && e.target.dataset.key;
-      if (!key) return;
-      params[key] = e.target.type === 'number' ? e.target.value : e.target.value;
-      $('#preset').value = '';
-      clearTimeout(timer);
-      timer = setTimeout(update, 120);
-    });
   }
 
   function fillForm() {
-    for (const el of $$('#params [data-key]')) {
+    for (const el of $$('#params [data-key], #cam-params [data-key]')) {
       const v = params[el.dataset.key];
       el.value = typeof v === 'boolean' ? String(v) : v;
     }
@@ -172,12 +227,15 @@
   // ---------------------------------------------------------------------
   // Хранение
   // ---------------------------------------------------------------------
+  const ALL_DEFAULTS = Object.assign({}, Geo.DEFAULTS, Cam.CAM_DEFAULTS);
+  const allParams = (src) => Object.assign({}, Geo.normalizeParams(src), Cam.normalizeCamParams(src));
+
   function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(Geo.normalizeParams(params))); } catch (e) { /* приватный режим */ }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(allParams(params))); } catch (e) { /* приватный режим */ }
     try {
       const diff = {};
-      const np = Geo.normalizeParams(params);
-      for (const k of Object.keys(Geo.DEFAULTS)) if (np[k] !== Geo.DEFAULTS[k]) diff[k] = np[k];
+      const np = allParams(params);
+      for (const k of Object.keys(ALL_DEFAULTS)) if (np[k] !== ALL_DEFAULTS[k]) diff[k] = np[k];
       const hash = Object.keys(diff).length ? '#p=' + encodeURIComponent(JSON.stringify(diff)) : '';
       history.replaceState(null, '', location.pathname + location.search + hash);
     } catch (e) { /* file:// в некоторых браузерах */ }
@@ -192,7 +250,7 @@
     if (!loaded) {
       try { loaded = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { loaded = null; }
     }
-    params = Geo.normalizeParams(loaded || {});
+    params = allParams(loaded || {});
   }
 
   // ---------------------------------------------------------------------
@@ -200,12 +258,14 @@
   // ---------------------------------------------------------------------
   function update() {
     model = Geo.computeBellows(params);
+    camera = Cam.computeCamera(model, params);
     save();
     renderSummary();
     renderMessages();
     for (const k of Object.keys(dirty)) dirty[k] = true;
     extValue = null;
     renderActive();
+    renderCamMessages();
   }
 
   function card(k, v, s) {
@@ -244,6 +304,10 @@
   }
 
   function renderActive() {
+    if (activeTab === 'camera') {
+      if (dirty.camera) { dirty.camera = false; renderCamera(true); }
+      return;
+    }
     if (!model || !model.ok) {
       for (const id of ['#drawing-view', '#pattern-view', '#stl-view']) $(id).innerHTML = '';
       if (viewer) viewer.setData({ tris: new Float32Array(0), lines: new Float32Array(0) }, true);
@@ -440,6 +504,169 @@
   }
 
   // ---------------------------------------------------------------------
+  // Камера
+  // ---------------------------------------------------------------------
+  const escHtml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+  function renderCamMessages() {
+    const el = $('#cam-messages');
+    if (!el) return;
+    if (!camera) { el.innerHTML = ''; return; }
+    el.innerHTML = camera.errors.map((m) => `<div class="msg err">${escHtml(m)}</div>`).join('') +
+      camera.warnings.map((m) => `<div class="msg warn">${escHtml(m)}</div>`).join('');
+  }
+
+  function ensureCamViewer() {
+    if (camViewer) return camViewer;
+    try {
+      camViewer = new window.BellowsViewer($('#gl-cam'));
+      camViewer.cam.yaw = -2.35;
+      camViewer.cam.pitch = 0.32;
+    } catch (e) {
+      $('#tab-camera .canvas-wrap').innerHTML = `<div class="msg err" style="margin:12px">Не удалось запустить 3D: ${escHtml(e.message)}</div>`;
+      camViewer = null;
+    }
+    return camViewer;
+  }
+
+  function camBedSize() {
+    return [Math.max(50, Number($('#bed-w').value) || 220), Math.max(50, Number($('#bed-h').value) || 220)];
+  }
+
+  function buildCamParts() {
+    for (const part of camera.parts) {
+      if (!part.csg) {
+        part.csg = part.build();
+        part.printBounds = Cam.printOriented(part, part.csg).bounds();
+        part.volume = part.csg.volume();
+      }
+    }
+  }
+
+  function renderCamera(keepCamera) {
+    renderCamMessages();
+    if (!camera || !camera.ok) {
+      $('#cam-summary').innerHTML = '';
+      $('#cam-parts').innerHTML = '';
+      $('#cam-bom').innerHTML = '';
+      if (camViewer) camViewer.setData({ tris: new Float32Array(0), lines: new Float32Array(0) }, true);
+      return;
+    }
+    buildCamParts();
+    renderCamSummary();
+    renderCamTables();
+    renderCamScene(keepCamera);
+  }
+
+  function renderCamSummary() {
+    const D = camera.dims;
+    const count = camera.parts.reduce((s, p) => s + p.qty, 0);
+    const vol = camera.parts.reduce((s, p) => s + p.qty * p.volume, 0) / 1000;
+    $('#cam-summary').innerHTML = [
+      card('Ось над рельсом', f1(D.A), 'мм'),
+      card('Передняя рамка', `${D.Sf}×${D.Sf}`, `плата ${D.board.w}×${D.board.h}`),
+      card('Задняя рамка', `${D.Sr}×${D.Sr}`, `кадр ${D.film[0]}×${D.film[1]}, задник поворотный`),
+      card('Рельс', `${D.railL}`, `мм, ${D.rail.name}`),
+      card('Деталей для печати', count, `${camera.parts.length} видов`),
+      card('Пластик', `≈ ${Math.round(vol * 1.25 * 0.6)} г`, `объём тел ${Math.round(vol)} см³, заполнение ~40 %`),
+    ].join('');
+  }
+
+  function renderCamTables() {
+    const [bw, bh] = camBedSize();
+    const rows = camera.parts.map((p) => {
+      const [sx, sy, sz] = p.printBounds.size;
+      const fits = (sx <= bw && sy <= bh) || (sy <= bw && sx <= bh);
+      return `<tr><td>${escHtml(p.name)}${p.note ? `<div class="hint">${escHtml(p.note)}</div>` : ''}</td>` +
+        `<td class="num">${p.qty}</td><td class="num">${f1(sx)} × ${f1(sy)} × ${f1(sz)}</td>` +
+        `<td class="${fits ? 'ok' : 'bad'}">${fits ? 'да' : 'не влезает'}</td>` +
+        `<td><button type="button" data-action="cam-part" data-part="${p.key}">STL</button></td></tr>`;
+    }).join('');
+    $('#cam-parts').innerHTML = `<thead><tr><th>Деталь</th><th>Шт.</th><th>Габарит при печати, мм</th><th>Стол ${bw}×${bh}</th><th></th></tr></thead><tbody>${rows}</tbody>`;
+    $('#cam-bom').innerHTML = '<thead><tr><th>Покупное</th><th>Шт.</th><th>Где</th></tr></thead><tbody>' +
+      camera.hardware.map((h) => `<tr><td>${escHtml(h.name)}</td><td class="num">${h.qty}</td><td>${escHtml(h.note)}</td></tr>`).join('') + '</tbody>';
+  }
+
+  function renderCamScene(keepCamera) {
+    const v = ensureCamViewer();
+    if (!v) return;
+    const D = camera.dims;
+    const range = $('#cam-ext');
+    const lo = Math.ceil(D.eMin), hi = D.eMax;
+    range.min = lo;
+    range.max = hi;
+    if (camExt === null) camExt = Math.round(lo + (hi - lo) * 0.45);
+    camExt = Math.max(lo, Math.min(hi, camExt));
+    range.value = camExt;
+    $('#cam-ext-out').textContent = `${f1(camExt)} мм`;
+
+    const tris = [];
+    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    const pushPoly = (vs, col) => {
+      let n = [0, 0, 0];
+      for (let i = 0; i < vs.length; i++) {
+        const a = vs[i], b = vs[(i + 1) % vs.length];
+        n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+        n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+        n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+      }
+      const l = Math.hypot(n[0], n[1], n[2]) || 1;
+      n = n.map((x) => x / l);
+      for (const q of vs) for (let i = 0; i < 3; i++) { if (q[i] < min[i]) min[i] = q[i]; if (q[i] > max[i]) max[i] = q[i]; }
+      for (let i = 1; i < vs.length - 1; i++) for (const q of [vs[0], vs[i], vs[i + 1]]) tris.push(q[0], q[1], q[2], n[0], n[1], n[2], col[0], col[1], col[2]);
+    };
+    const P = Cam.placements(camera, camExt);
+    for (const part of camera.parts) {
+      for (const m of P[part.key] || []) {
+        const flip = CSGM.det(m) < 0;
+        for (const poly of part.csg.polygons) {
+          let vs = poly.vertices.map((q) => CSGM.apply(m, q));
+          if (flip) vs = vs.reverse();
+          pushPoly(vs, part.color);
+        }
+      }
+    }
+    if ($('#cv-bellows').checked) {
+      const mesh = Geo.buildMesh3D(model, camExt, { stiffOffset: 0 });
+      const oz = Cam.K.Tf + Cam.K.tPlate;
+      for (const f of mesh.faces) pushPoly(f.quad.map((q) => [q[0], q[1] + D.A, q[2] + oz]), f.collar ? [0.3, 0.28, 0.26] : [0.17, 0.17, 0.19]);
+    }
+    if ($('#cv-rail').checked) {
+      const x = D.rail.w / 2, y0 = -D.rail.h, z0 = D.railZ0, z1 = D.railZ0 + D.railL;
+      const col = [0.72, 0.74, 0.78];
+      const q = (a, b, c, d) => pushPoly([a, b, c, d], col);
+      q([-x, 0, z0], [x, 0, z0], [x, 0, z1], [-x, 0, z1]);
+      q([-x, y0, z0], [-x, y0, z1], [x, y0, z1], [x, y0, z0]);
+      q([x, y0, z0], [x, y0, z1], [x, 0, z1], [x, 0, z0]);
+      q([-x, y0, z0], [-x, 0, z0], [-x, 0, z1], [-x, y0, z1]);
+      q([-x, y0, z0], [x, y0, z0], [x, 0, z0], [-x, 0, z0]);
+      q([-x, y0, z1], [-x, 0, z1], [x, 0, z1], [x, y0, z1]);
+    }
+    const center = [0, 1, 2].map((i) => (min[i] + max[i]) / 2);
+    const radius = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * 0.6;
+    v.setData({ tris: new Float32Array(tris), lines: new Float32Array(0), center, radius }, keepCamera);
+  }
+
+  function camPartSTL(part) {
+    return Ex.stlBinary(Cam.printOriented(part, part.csg).toTriangles(), `bellows camera: ${part.key}`);
+  }
+
+  function camZip() {
+    buildCamParts();
+    const files = [];
+    camera.parts.forEach((p, i) => {
+      files.push({ name: `camera/${String(i + 1).padStart(2, '0')}_${p.key}_x${p.qty}.stl`, data: camPartSTL(p) });
+    });
+    files.push({ name: 'README.txt', data: Cam.assemblyText(camera, model).replace(/\n/g, '\r\n') });
+    files.push({ name: 'params.json', data: JSON.stringify(allParams(params), null, 2) });
+    files.push({ name: 'bellows/pattern.svg', data: Ex.patternSVG(model) });
+    files.push({ name: 'bellows/pattern.dxf', data: Ex.dxfPattern(model) });
+    files.push({ name: 'bellows/drawing.svg', data: Ex.drawingSVG(model) });
+    for (const f of Ex.stiffenerFiles(model, stlOpts())) files.push({ name: 'bellows/stiffeners/' + f.name, data: f.data });
+    return Ex.makeZip(files);
+  }
+
+  // ---------------------------------------------------------------------
   // Скачивание
   // ---------------------------------------------------------------------
   function download(name, data, mime) {
@@ -479,6 +706,32 @@
       $('#gl').toBlob((b) => b && download(baseName() + '_3d.png', b));
     },
     'view-reset': () => viewer && viewer.resetView(),
+    'cam-part': (btn) => {
+      const part = camera && camera.ok && camera.parts.find((p) => p.key === btn.dataset.part);
+      if (!part) return;
+      buildCamParts();
+      download(`${part.key}_x${part.qty}.stl`, camPartSTL(part), 'model/stl');
+    },
+    'cam-zip': (btn) => {
+      if (!camera || !camera.ok) return;
+      const old = btn.textContent;
+      btn.textContent = 'Собираю архив…';
+      btn.disabled = true;
+      setTimeout(() => {
+        try {
+          download(`camera_${camera.params.camFormat}_${baseName()}.zip`, camZip(), 'application/zip');
+        } finally {
+          btn.textContent = old;
+          btn.disabled = false;
+        }
+      }, 30);
+    },
+    'cam-png': () => {
+      if (!camViewer) return;
+      camViewer.render();
+      $('#gl-cam').toBlob((b) => b && download(`camera_${camera.params.camFormat}_3d.png`, b));
+    },
+    'cam-view-reset': () => camViewer && camViewer.resetView(),
     'stl-export': () => {
       const o = stlOpts();
       const files = Ex.stiffenerFiles(model, o);
@@ -503,32 +756,38 @@
       const btn = e.target.closest('[data-action]');
       if (!btn || !model || !model.ok) return;
       const fn = ACTIONS[btn.dataset.action];
-      if (fn) fn();
+      if (fn) fn(btn);
     });
     for (const id of ['#drawing-view', '#pattern-view', '#stl-view']) attachPanZoom($(id));
     for (const id of ['#pat-stiff', '#pat-labels', '#print-paper']) $(id).addEventListener('change', () => { dirty.pattern = true; renderActive(); });
     for (const id of ['#stl-mode', '#bed-w', '#bed-h', '#bed-gap', '#bed-diag']) $(id).addEventListener('change', () => { dirty.stl = true; renderActive(); });
     for (const id of ['#v-fabric', '#v-stiff', '#v-edges']) $(id).addEventListener('change', () => model && model.ok && render3D(true));
+    for (const id of ['#cv-bellows', '#cv-rail']) $(id).addEventListener('change', () => camera && camera.ok && renderCamScene(true));
+    $('#cam-ext').addEventListener('input', (e) => {
+      camExt = Number(e.target.value);
+      if (camera && camera.ok) renderCamScene(true);
+    });
+    for (const id of ['#bed-w', '#bed-h']) $(id).addEventListener('change', () => { dirty.camera = true; });
     $('#ext-range').addEventListener('input', (e) => {
       extValue = Number(e.target.value);
       if (model && model.ok) render3D(true);
     });
 
     $('#btn-reset').addEventListener('click', () => {
-      params = Object.assign({}, Geo.DEFAULTS);
+      params = Object.assign({}, ALL_DEFAULTS);
       $('#preset').value = '';
       fillForm();
       update();
     });
     $('#btn-save-json').addEventListener('click', () => {
-      download('bellows_params.json', JSON.stringify(Geo.normalizeParams(params), null, 2), 'application/json');
+      download('bellows_params.json', JSON.stringify(allParams(params), null, 2), 'application/json');
     });
     $('#file-json').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
       file.text().then((txt) => {
         try {
-          params = Geo.normalizeParams(JSON.parse(txt));
+          params = allParams(JSON.parse(txt));
           fillForm();
           update();
         } catch (err) {
