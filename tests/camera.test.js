@@ -66,8 +66,8 @@ test('размеры согласованы с мехом и форматом', 
     assert.ok(D.Sr >= D.bfR.plateW && D.Sr / 2 > D.guideOut, 'задняя рамка вмещает рамку меха и задник');
     assert.ok(D.bfF.lipW > 0 && D.bfF.lipW < bm.derived.mid.fW, 'бортик меньше манжеты');
     assert.ok(D.railL >= D.railNeed, 'рельса хватает на полное растяжение');
-    assert.ok(D.A - D.Sr / 2 >= D.baseTop + C.K.knobH, 'задняя рамка не задевает барашек');
-    assert.ok(D.A - cam.params.camRise - D.Sf / 2 >= D.baseTop + C.K.knobH, 'опущенная передняя рамка не задевает барашек');
+    assert.ok(D.A - D.Sr / 2 >= D.baseTop + C.K.knobSH, 'задняя рамка не задевает барашек');
+    assert.ok(D.A - cam.params.camRise - D.Sf / 2 >= D.baseTop + C.K.knobSH, 'опущенная передняя рамка не задевает барашек');
   }
 });
 

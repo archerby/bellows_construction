@@ -632,15 +632,8 @@
       for (const f of mesh.faces) pushPoly(f.quad.map((q) => [q[0], q[1] + D.A, q[2] + oz]), f.collar ? [0.3, 0.28, 0.26] : [0.17, 0.17, 0.19]);
     }
     if ($('#cv-rail').checked) {
-      const x = D.rail.w / 2, y0 = -D.rail.h, z0 = D.railZ0, z1 = D.railZ0 + D.railL;
-      const col = [0.72, 0.74, 0.78];
-      const q = (a, b, c, d) => pushPoly([a, b, c, d], col);
-      q([-x, 0, z0], [x, 0, z0], [x, 0, z1], [-x, 0, z1]);
-      q([-x, y0, z0], [-x, y0, z1], [x, y0, z1], [x, y0, z0]);
-      q([x, y0, z0], [x, y0, z1], [x, 0, z1], [x, 0, z0]);
-      q([-x, y0, z0], [-x, 0, z0], [-x, 0, z1], [-x, y0, z1]);
-      q([-x, y0, z0], [x, y0, z0], [x, 0, z0], [-x, 0, z0]);
-      q([-x, y0, z1], [-x, 0, z1], [x, 0, z1], [x, y0, z1]);
+      if (!camera.railCsg) camera.railCsg = Cam.railCSG(D);
+      for (const poly of camera.railCsg.polygons) pushPoly(poly.vertices, [0.74, 0.76, 0.8]);
     }
     const center = [0, 1, 2].map((i) => (min[i] + max[i]) / 2);
     const radius = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * 0.6;
