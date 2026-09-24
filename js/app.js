@@ -42,7 +42,9 @@
     {
       legend: 'Материалы',
       fields: [
-        { key: 'tStiff', label: 'Толщина плашки, мм', step: 0.05 },
+        { key: 'tStiff', label: 'Толщина плашки', type: 'select',
+          options: [['0.2', '0,2 мм'], ['0.4', '0,4 мм']],
+          hint: '0,2 мм — один слой: мягче, мех складывается плотнее. 0,4 мм — два слоя: жёстче, для крупных мехов (5×7″, 8×10″).' },
         { key: 'tOuter', label: 'Наружный материал, мм', step: 0.05 },
         { key: 'tLining', label: 'Подкладка, мм', step: 0.05 },
         { key: 'flap', label: 'Клапан шва, мм', step: 0.5 },
@@ -216,7 +218,7 @@
     const d = model.derived, p = model.params;
     el.innerHTML = [
       card('Складок на сторону', d.N, `плашка ${f1(d.hAct)} мм`),
-      card('Плашек', d.stiffenerCount, `по ${p.tStiff} мм`),
+      card('Плашек', d.stiffenerCount, `по ${String(p.tStiff).replace('.', ',')} мм`),
       card('Просвет в складках', `${f1(d.clearRear.w)}×${f1(d.clearRear.h)}`, `спереди ${f1(d.clearFront.w)}×${f1(d.clearFront.h)} мм`),
       card('Габарит сложенного', `${f1(d.outerRear.w)}×${f1(d.outerRear.h)}`, 'сзади, мм'),
       card('Растяжение', `${f1(d.minFrame)}…${f1(p.maxExt)}`, 'мм, мин. — оценка'),
@@ -413,7 +415,7 @@
       });
       const W = cols * (cw + 10), H = rows * (ch + 10);
       mountSvg($('#stl-view'), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`);
-      info.innerHTML = `<b>${P.stiffeners.length}</b> плашек толщиной <b>${model.params.tStiff} мм</b> → <b>${n}</b> стол(ов) ${o.bedW}×${o.bedH} мм. ` +
+      info.innerHTML = `<b>${P.stiffeners.length}</b> плашек толщиной <b>${String(model.params.tStiff).replace('.', ',')} мм</b> → <b>${n}</b> стол(ов) ${o.bedW}×${o.bedH} мм. ` +
         (pack.diagonalCount ? `Длинных плашек уложено по диагонали: <b>${pack.diagonalCount}</b>. ` : '') +
         'В архиве для каждого стола STL и SVG-карта с номерами плашек. Цвет — сторона меха: A низ, B правая, C верх, D левая.' +
         (pack.overflow.length ? ` <span style="color:#c0392b">Не помещаются на стол: ${pack.overflow.join(', ')}</span>` : '');
@@ -482,9 +484,9 @@
       const files = Ex.stiffenerFiles(model, o);
       const stls = files.filter((f) => f.name.endsWith('.stl'));
       if (stls.length === 1 && o.mode === 'pattern') {
-        download(`${baseName()}_stiffeners.stl`, stls[0].data, 'model/stl');
+        download(`${baseName()}_stiffeners_t${model.params.tStiff}.stl`, stls[0].data, 'model/stl');
       } else {
-        download(`${baseName()}_stiffeners_${o.mode}.zip`, Ex.makeZip(files), 'application/zip');
+        download(`${baseName()}_stiffeners_${o.mode}_t${model.params.tStiff}.zip`, Ex.makeZip(files), 'application/zip');
       }
     },
   };

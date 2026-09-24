@@ -33,11 +33,14 @@
     hingeGap: 1.5, // зазор между соседними плашками на линии сгиба
     cornerGap: 1.5, // отступ плашки от угловой диагонали
     startOut: true, // первая складка верха/низа — гребнем наружу
-    tStiff: 0.2, // толщина плашки
+    tStiff: 0.2, // толщина плашки: 0,2 мм (один слой) или 0,4 мм (два слоя)
     tOuter: 0.3, // толщина внешнего материала
     tLining: 0.15, // толщина подкладки
     flap: 8, // ширина клапана для склейки шва
   };
+
+  // Допустимые толщины плашек для печати: один или два слоя по 0,2 мм.
+  const STIFF_THICKNESSES = [0.2, 0.4];
 
   const PANEL_NAMES = ['A', 'B', 'C', 'D'];
   const PANEL_TITLES = ['низ', 'правая', 'верх', 'левая'];
@@ -189,6 +192,8 @@
         p[key] = String(val);
       }
     }
+    // толщина плашки — только из допустимого набора (ближайшее значение)
+    p.tStiff = STIFF_THICKNESSES.reduce((best, t) => (Math.abs(t - p.tStiff) < Math.abs(best - p.tStiff) ? t : best));
     return p;
   }
 
@@ -472,7 +477,6 @@
     if (dropped > 0) warnings.push(`Плашек пропущено как слишком мелких: ${dropped}.`);
     const taper = Math.max(...panels.map((pn) => Math.abs(pn.Or - pn.Of) / (2 * Lt)));
     if (taper > 0.35) warnings.push('Очень сильная конусность: складки на углах будут работать с перекосом, проверьте на макете из бумаги.');
-    if (p.tStiff < 0.15) warnings.push('Плашки тоньше 0,15 мм на FDM-принтере печатаются ненадёжно.');
 
     return {
       ok: errors.length === 0, params: p, errors, warnings, derived, panels, zk, pattern,
@@ -543,7 +547,7 @@
   }
 
   return {
-    DEFAULTS, PANEL_NAMES, PANEL_TITLES,
+    DEFAULTS, PANEL_NAMES, PANEL_TITLES, STIFF_THICKNESSES,
     normalizeParams, computeBellows, buildMesh3D,
     // утилиты (используются экспортом и тестами)
     util: { add, sub, mul, dot, cross, len, norm, lerp, polyArea, polyCentroid, bbox, insetPolygon, clipHalfPlane, clipSegment, invBilinear, bilinear3 },

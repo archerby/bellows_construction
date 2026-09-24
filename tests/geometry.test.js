@@ -214,3 +214,22 @@ test('раскладка по диагонали: длинные плашки п
     }
   }
 });
+
+test('толщина плашки: только 0,2 или 0,4 мм, STL нужной толщины', () => {
+  assert.equal(G.normalizeParams({ tStiff: 0.4 }).tStiff, 0.4);
+  assert.equal(G.normalizeParams({ tStiff: '0.4' }).tStiff, 0.4);
+  assert.equal(G.normalizeParams({ tStiff: 0.25 }).tStiff, 0.2);
+  assert.equal(G.normalizeParams({ tStiff: 1 }).tStiff, 0.4);
+  const thin = G.computeBellows({ tStiff: 0.2 }), thick = G.computeBellows({ tStiff: 0.4 });
+  assert.ok(thick.derived.minFrame > thin.derived.minFrame, 'толстые плашки — длиннее сложенный пакет');
+  for (const m of [thin, thick]) {
+    const files = E.stiffenerFiles(m, { mode: 'bed' });
+    const stl = files.find((f) => f.name.endsWith('.stl')).data;
+    const dv = new DataView(stl.buffer, stl.byteOffset);
+    let zmax = -Infinity;
+    for (let i = 0; i < dv.getUint32(80, true); i++) {
+      for (let v = 0; v < 3; v++) zmax = Math.max(zmax, dv.getFloat32(84 + i * 50 + 12 + v * 12 + 8, true));
+    }
+    near(zmax, m.params.tStiff, 1e-6, 'толщина STL');
+  }
+});
