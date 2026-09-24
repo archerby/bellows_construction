@@ -393,6 +393,7 @@
       bedH: Math.max(50, Number($('#bed-h').value) || 220),
       gap: Math.max(0.5, Number($('#bed-gap').value) || 2),
       margin: 3,
+      diagonal: $('#bed-diag').checked,
     };
   }
 
@@ -401,7 +402,7 @@
     const info = $('#stl-info');
     const P = model.pattern;
     if (o.mode === 'bed') {
-      const pack = Ex.packStiffeners(P.stiffeners, o.bedW, o.bedH, o.gap, o.margin);
+      const pack = Ex.packStiffeners(P.stiffeners, o.bedW, o.bedH, o.gap, o.margin, { diagonal: o.diagonal });
       const n = pack.beds.length;
       const cols = Math.max(1, Math.ceil(Math.sqrt(n)));
       const cw = o.bedW + 12, ch = o.bedH + 20;
@@ -413,6 +414,7 @@
       const W = cols * (cw + 10), H = rows * (ch + 10);
       mountSvg($('#stl-view'), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`);
       info.innerHTML = `<b>${P.stiffeners.length}</b> плашек толщиной <b>${model.params.tStiff} мм</b> → <b>${n}</b> стол(ов) ${o.bedW}×${o.bedH} мм. ` +
+        (pack.diagonalCount ? `Длинных плашек уложено по диагонали: <b>${pack.diagonalCount}</b>. ` : '') +
         'В архиве для каждого стола STL и SVG-карта с номерами плашек. Цвет — сторона меха: A низ, B правая, C верх, D левая.' +
         (pack.overflow.length ? ` <span style="color:#c0392b">Не помещаются на стол: ${pack.overflow.join(', ')}</span>` : '');
     } else {
@@ -503,7 +505,7 @@
     });
     for (const id of ['#drawing-view', '#pattern-view', '#stl-view']) attachPanZoom($(id));
     for (const id of ['#pat-stiff', '#pat-labels', '#print-paper']) $(id).addEventListener('change', () => { dirty.pattern = true; renderActive(); });
-    for (const id of ['#stl-mode', '#bed-w', '#bed-h', '#bed-gap']) $(id).addEventListener('change', () => { dirty.stl = true; renderActive(); });
+    for (const id of ['#stl-mode', '#bed-w', '#bed-h', '#bed-gap', '#bed-diag']) $(id).addEventListener('change', () => { dirty.stl = true; renderActive(); });
     for (const id of ['#v-fabric', '#v-stiff', '#v-edges']) $(id).addEventListener('change', () => model && model.ok && render3D(true));
     $('#ext-range').addEventListener('input', (e) => {
       extValue = Number(e.target.value);

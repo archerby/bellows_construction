@@ -178,3 +178,39 @@ test('экспорт SVG и DXF формируется', () => {
   const tiles = E.printTilesHTML(m, { paper: 'A4' });
   assert.equal((tiles.html.match(/print-page/g) || []).length, tiles.plan.pages);
 });
+
+test('раскладка по диагонали: длинные плашки помещаются, внутри стола, без наложений', () => {
+  const m = G.computeBellows({ frontW: 99, frontH: 99, rearW: 190, rearH: 190 });
+  const S = m.pattern.stiffeners;
+  const straight = E.packStiffeners(S, 180, 180, 2, 3, { diagonal: false });
+  assert.ok(straight.overflow.length > 0, 'в этом примере часть плашек длиннее стола');
+  const pack = E.packStiffeners(S, 180, 180, 2, 3, { diagonal: true });
+  assert.equal(pack.overflow.length, 0);
+  assert.equal(pack.diagonalCount, straight.overflow.length);
+  assert.equal(pack.beds.reduce((s, b) => s + b.items.length, 0), S.length);
+  // разделяющая ось (SAT) по нормалям рёбер обоих многоугольников
+  const separation = (P, Q) => {
+    let best = -Infinity;
+    for (const poly of [P, Q]) {
+      for (let i = 0; i < poly.length; i++) {
+        const d = U.norm(U.sub(poly[(i + 1) % poly.length], poly[i]));
+        const n = [-d[1], d[0]];
+        const pr = (R) => R.map((p) => U.dot(p, n));
+        const a = pr(P), b = pr(Q);
+        best = Math.max(best, Math.min(...b) - Math.max(...a), Math.min(...a) - Math.max(...b));
+      }
+    }
+    return best;
+  };
+  for (const b of pack.beds) {
+    for (const it of b.items) {
+      const bb = U.bbox(it.poly);
+      assert.ok(bb.minx >= 3 - 1e-6 && bb.miny >= 3 - 1e-6 && bb.maxx <= 177 + 1e-6 && bb.maxy <= 177 + 1e-6, `${it.id} выходит за стол`);
+    }
+    for (let i = 0; i < b.items.length; i++) {
+      for (let j = i + 1; j < b.items.length; j++) {
+        assert.ok(separation(b.items[i].poly, b.items[j].poly) > 0.5, `${b.items[i].id} и ${b.items[j].id} накладываются`);
+      }
+    }
+  }
+});

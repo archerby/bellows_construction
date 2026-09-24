@@ -475,14 +475,91 @@
     return r.map((p) => [p[0] - bb.minx, p[1] - bb.miny]);
   }
 
-  function packStiffeners(stiffeners, bedW, bedH, gap, margin) {
+  /**
+   * Раскладка по диагонали стола — для плашек длиннее стороны стола.
+   * Работаем в повёрнутой системе координат (u — вдоль диагонали, v — поперёк, начало — центр стола):
+   * плашки кладутся рядами вдоль диагонали, ряды заполняются от центра к углам.
+   * Свободные крайние ряды потом добирают короткими плашками.
+   */
+  function diagonalPacker(bedW, bedH, gap, margin, rowH) {
+    const x0 = margin, y0 = margin, x1 = bedW - margin, y1 = bedH - margin;
+    const theta = Math.atan2(y1 - y0, x1 - x0);
+    const c = Math.cos(theta), s = Math.sin(theta);
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const toR = (p) => { const dx = p[0] - cx, dy = p[1] - cy; return [c * dx + s * dy, -s * dx + c * dy]; };
+    const fromR = (p) => [cx + c * p[0] - s * p[1], cy + s * p[0] + c * p[1]];
+    const corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(toR);
+    // хорда стола на уровне v: интервал u, лежащий внутри стола
+    const chord = (v) => {
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < 4; i++) {
+        const a = corners[i], b = corners[(i + 1) % 4];
+        if ((a[1] - v) * (b[1] - v) > 0 || a[1] === b[1]) continue;
+        const u = a[0] + ((b[0] - a[0]) * (v - a[1])) / (b[1] - a[1]);
+        lo = Math.min(lo, u);
+        hi = Math.max(hi, u);
+      }
+      return lo <= hi ? [lo, hi] : null;
+    };
+    const vmin = Math.min(...corners.map((p) => p[1])), vmax = Math.max(...corners.map((p) => p[1]));
+    const slots = [];
+    for (let k = 0; k < 1000; k++) {
+      const cand = k === 0 ? [-rowH / 2] : [-rowH / 2 + k * (rowH + gap), -rowH / 2 - k * (rowH + gap)];
+      const inside = cand.filter((v) => v >= vmin && v + rowH <= vmax);
+      if (!inside.length) break;
+      slots.push(...inside);
+    }
+    const beds = [];
+    const tryPlace = (bed, it) => {
+      if (it.h > rowH + 1e-9) return false;
+      const flipped = it.poly.map((p) => [it.w - p[0], it.h - p[1]]); // та же плашка, повёрнутая на 180°
+      for (let si = 0; si < slots.length; si++) {
+        const vOff = slots[si] + (rowH - it.h) / 2;
+        for (const poly of [it.poly, flipped]) {
+          let lo = bed.cursors[si] === null ? -Infinity : bed.cursors[si] + gap, hi = Infinity, ok = true;
+          for (const p of poly) {
+            const ch = chord(p[1] + vOff);
+            if (!ch) { ok = false; break; }
+            lo = Math.max(lo, ch[0] - p[0]);
+            hi = Math.min(hi, ch[1] - p[0]);
+          }
+          if (!ok || lo > hi + 1e-9) continue;
+          bed.items.push({
+            id: it.s.id, panel: it.s.panel, angle: theta, th: it.h,
+            poly: poly.map((p) => fromR([p[0] + lo, p[1] + vOff])),
+          });
+          bed.cursors[si] = lo + it.w;
+          return true;
+        }
+      }
+      return false;
+    };
+    return {
+      beds,
+      /** Положить на существующий диагональный стол; allowNew — можно начать новый. */
+      place(it, allowNew) {
+        if (beds.some((bed) => tryPlace(bed, it))) return true;
+        if (!allowNew) return false;
+        const bed = { items: [], cursors: slots.map(() => null), diagonal: true };
+        if (!tryPlace(bed, it)) return false;
+        beds.push(bed);
+        return true;
+      },
+    };
+  }
+
+  function packStiffeners(stiffeners, bedW, bedH, gap, margin, options) {
+    const opt = Object.assign({ diagonal: true }, options);
     gap = gap === undefined ? 2 : gap;
     margin = margin === undefined ? 3 : margin;
     const beds = [], overflow = [];
     const usableW = bedW - 2 * margin, usableH = bedH - 2 * margin;
-    const newBed = () => { const b = { items: [], rows: [], nextY: margin }; beds.push(b); return b; };
+
+    // 1. Ориентация: длинная сторона горизонтально; если не влезает — поворот на 90°.
+    const normal = [], long = [];
     for (const s of stiffeners) {
-      let poly = orientStiffener(s.poly);
+      const base = orientStiffener(s.poly);
+      let poly = base;
       let bb = bbox(poly);
       if (bb.w > usableW || bb.h > usableH) {
         poly = poly.map((p) => [bb.h - p[1], p[0]]);
@@ -490,7 +567,30 @@
         poly = poly.map((p) => [p[0] - bb.minx, p[1] - bb.miny]);
         bb = bbox(poly);
       }
-      if (bb.w > usableW + 1e-6 || bb.h > usableH + 1e-6) { overflow.push(s.id); continue; }
+      if (bb.w > usableW + 1e-6 || bb.h > usableH + 1e-6) {
+        const b0 = bbox(base);
+        if (opt.diagonal) long.push({ s, poly: base, w: b0.w, h: b0.h });
+        else overflow.push(s.id);
+      } else {
+        const b0 = bbox(base);
+        normal.push({ s, poly, bb, diagPoly: base, w: b0.w, h: b0.h });
+      }
+    }
+
+    // 2. Длинные плашки — по диагонали, от самой длинной к короткой.
+    let diag = null, diagonalCount = 0;
+    if (long.length) {
+      diag = diagonalPacker(bedW, bedH, gap, margin, Math.max(...long.map((i) => i.h)));
+      for (const it of long.sort((a, b) => b.w - a.w)) {
+        if (diag.place(it, true)) diagonalCount++;
+        else overflow.push(it.s.id);
+      }
+    }
+
+    // 3. Остальные: сначала добираем свободные ряды диагональных столов, потом обычные ряды.
+    for (const n of normal) {
+      if (diag && diag.place({ s: n.s, poly: n.diagPoly, w: n.w, h: n.h }, false)) continue;
+      const { s, poly, bb } = n;
       let placed = false;
       for (const bed of beds) {
         for (const row of bed.rows) {
@@ -513,7 +613,8 @@
         }
       }
       if (!placed) {
-        const bed = newBed();
+        const bed = { items: [], rows: [], nextY: margin };
+        beds.push(bed);
         const row = { y: margin, h: bb.h, x: margin };
         bed.rows.push(row);
         bed.nextY = margin + bb.h + gap;
@@ -521,7 +622,9 @@
         row.x += bb.w + gap;
       }
     }
-    return { beds: beds.map((b) => ({ items: b.items })), overflow, bedW, bedH };
+    const out = (diag ? diag.beds.map((b) => ({ items: b.items, diagonal: true })) : [])
+      .concat(beds.map((b) => ({ items: b.items })));
+    return { beds: out, overflow, diagonalCount, bedW, bedH };
   }
 
   const PANEL_FILL = ['#f4b860', '#8cc2e8', '#a8d69a', '#e8a3c7'];
@@ -531,7 +634,7 @@
     const o = [];
     const m = 6;
     o.push(`<rect x="0" y="0" width="${fmt(bedW + 2 * m)}" height="${fmt(bedH + 2 * m + 8)}" fill="#fff"/>`);
-    o.push(textEl(m, 5.5, `Стол ${index + 1}: ${bed.items.length} плашек (${fmt(bedW)}×${fmt(bedH)} мм)`, 4, 'font-weight="bold"'));
+    o.push(textEl(m, 5.5, `Стол ${index + 1}: ${bed.items.length} плашек (${fmt(bedW)}×${fmt(bedH)} мм)${bed.diagonal ? ' — по диагонали' : ''}`, 4, 'font-weight="bold"'));
     // В слайсере начало координат стола — внизу слева; в SVG ось Y направлена вниз, поэтому отражаем.
     o.push(`<g transform="translate(${m} ${m + 8 + bedH}) scale(1 -1)">`);
     o.push(`<rect x="0" y="0" width="${fmt(bedW)}" height="${fmt(bedH)}" fill="#f6f6f6" stroke="#444" stroke-width="0.4"/>`);
@@ -540,9 +643,12 @@
     if (opt.labels) {
       for (const it of bed.items) {
         const c = polyCentroid(it.poly);
-        const bb = bbox(it.poly);
-        const fs = Math.max(1.5, Math.min(4, bb.h * 0.45));
-        o.push(textEl(m + c[0], m + 8 + bedH - c[1] + fs * 0.35, it.id, fs, 'text-anchor="middle"'));
+        const th = it.th || bbox(it.poly).h;
+        const fs = Math.max(1.5, Math.min(4, th * 0.45));
+        const x = m + c[0], y = m + 8 + bedH - c[1];
+        // ось Y в SVG направлена вниз, поэтому угол подписи меняет знак
+        const rot = it.angle ? ` transform="rotate(${fmt((-it.angle * 180) / Math.PI)} ${fmt(x)} ${fmt(y)})"` : '';
+        o.push(textEl(x, y + fs * 0.35, it.id, fs, `text-anchor="middle"${rot}`));
       }
     }
     const W = bedW + 2 * m, H = bedH + 2 * m + 8;
@@ -613,7 +719,7 @@
   //  Пакеты экспорта плашек
   // =====================================================================
   function stiffenerFiles(model, options) {
-    const opt = Object.assign({ mode: 'bed', bedW: 220, bedH: 220, gap: 2, margin: 3 }, options);
+    const opt = Object.assign({ mode: 'bed', bedW: 220, bedH: 220, gap: 2, margin: 3, diagonal: true }, options);
     const t = model.params.tStiff;
     const S = model.pattern.stiffeners;
     const files = [];
@@ -642,12 +748,13 @@
       }
       note.push('stiffeners_panel_X.stl — плашки каждой стороны в позициях развёртки.');
     } else {
-      const pack = packStiffeners(S, opt.bedW, opt.bedH, opt.gap, opt.margin);
+      const pack = packStiffeners(S, opt.bedW, opt.bedH, opt.gap, opt.margin, { diagonal: opt.diagonal });
       pack.beds.forEach((bed, i) => {
         const n = String(i + 1).padStart(2, '0');
         files.push({ name: `bed_${n}.stl`, data: stiffenersSTL(bed.items.map((it) => it.poly), t) });
         files.push({ name: `bed_${n}_map.svg`, data: bedSVG(bed, opt.bedW, opt.bedH, i, { physical: true }) });
       });
+      if (pack.diagonalCount) note.push(`Длинные плашки (${pack.diagonalCount} шт.) уложены по диагонали стола — в заголовке карты такого стола стоит «по диагонали».`);
       if (pack.overflow.length) note.push(`Не поместились на стол: ${pack.overflow.join(', ')}`);
       note.push(`Столов: ${pack.beds.length}, размер ${opt.bedW}×${opt.bedH} мм.`);
     }
