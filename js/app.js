@@ -97,7 +97,10 @@
     {
       legend: 'Печать',
       fields: [
-        { key: 'camClearance', label: 'Зазор посадок, мм', step: 0.05, hint: 'Добавляется к отверстиям под гайки и платам. 0,2–0,4 мм для FDM.' },
+        { pair: ['camBedW', 'camBedH'], label: 'Стол принтера, Ш × В' },
+        { key: 'camSplit', label: 'Большие детали', type: 'select', options: [['true', 'разрезать на части с «ласточкиным хвостом»'], ['false', 'не разрезать']],
+          hint: 'Место разреза выбирается автоматически — в стороне от отверстий, пазов и гнёзд гаек.' },
+        { key: 'camClearance', label: 'Зазор посадок, мм', step: 0.05, hint: 'Добавляется к отверстиям под гайки, платам и шипам составных деталей. 0,2–0,4 мм для FDM.' },
       ],
     },
   ];
@@ -259,6 +262,9 @@
   function update() {
     model = Geo.computeBellows(params);
     camera = Cam.computeCamera(model, params);
+    const cpNorm = Cam.normalizeCamParams(params);
+    $('#bed-w').value = cpNorm.camBedW;
+    $('#bed-h').value = cpNorm.camBedH;
     save();
     renderSummary();
     renderMessages();
@@ -530,17 +536,42 @@
   }
 
   function camBedSize() {
-    return [Math.max(50, Number($('#bed-w').value) || 220), Math.max(50, Number($('#bed-h').value) || 220)];
+    return [camera.params.camBedW, camera.params.camBedH];
   }
 
   function buildCamParts() {
+    const [W, H] = camBedSize();
+    const cp = camera.params;
+    const splitKey = `${cp.camSplit}|${W}x${H}`;
     for (const part of camera.parts) {
       if (!part.csg) {
         part.csg = part.build();
-        part.printBounds = Cam.printOriented(part, part.csg).bounds();
+        part.printed = part.csg.transform(part.printT);
+        part.printBounds = part.printed.bounds();
         part.volume = part.csg.volume();
       }
+      if (part.splitKey !== splitKey) {
+        part.splitKey = splitKey;
+        part.fitAngle = Cam.bedFitAngle(part.printed, W, H);
+        const fits = part.fitAngle !== null;
+        let pieces = !fits && cp.camSplit ? Cam.splitForBed(part.printed, W, H, cp.camClearance) : null;
+        if (pieces && pieces.length < 2) pieces = null;
+        part.pieces = pieces;
+        part.piecesLocal = pieces ? pieces.map((pc) => pc.transform(Cam.invRot(part.printT))) : null;
+        part.fits = pieces ? pieces.every((pc) => Cam.fitsBed(pc, W, H)) : fits;
+      }
     }
+  }
+
+  /** Файлы STL детали: одна деталь или её части. */
+  function camPartFiles(part) {
+    const [W, H] = camBedSize();
+    if (!part.pieces) return [{ name: `${part.key}_x${part.qty}.stl`, data: camPartSTL(part) }];
+    const n = part.pieces.length;
+    return part.pieces.map((pc, i) => ({
+      name: `${part.key}_part${i + 1}of${n}_x${part.qty}.stl`,
+      data: Ex.stlBinary(Cam.layPiece(pc, W, H).toTriangles(), `bellows camera: ${part.key} ${i + 1}/${n}`),
+    }));
   }
 
   function renderCamera(keepCamera) {
@@ -560,14 +591,15 @@
 
   function renderCamSummary() {
     const D = camera.dims;
-    const count = camera.parts.reduce((s, p) => s + p.qty, 0);
+    const count = camera.parts.reduce((s, p) => s + p.qty * (p.pieces ? p.pieces.length : 1), 0);
+    const nSplit = camera.parts.filter((p) => p.pieces).length;
     const vol = camera.parts.reduce((s, p) => s + p.qty * p.volume, 0) / 1000;
     $('#cam-summary').innerHTML = [
       card('Ось над рельсом', f1(D.A), 'мм'),
       card('Передняя рамка', `${D.Sf}×${D.Sf}`, `плата ${D.board.w}×${D.board.h}`),
       card('Задняя рамка', `${D.Sr}×${D.Sr}`, `кадр ${D.film[0]}×${D.film[1]}, задник поворотный`),
       card('Рельс', `${D.railL}`, `мм, ${D.rail.name}`),
-      card('Деталей для печати', count, `${camera.parts.length} видов`),
+      card('Деталей для печати', count, nSplit ? `${camera.parts.length} видов, ${nSplit} разрезаны на части` : `${camera.parts.length} видов`),
       card('Пластик', `≈ ${Math.round(vol * 1.25 * 0.6)} г`, `объём тел ${Math.round(vol)} см³, заполнение ~40 %`),
     ].join('');
   }
@@ -576,10 +608,16 @@
     const [bw, bh] = camBedSize();
     const rows = camera.parts.map((p) => {
       const [sx, sy, sz] = p.printBounds.size;
-      const fits = (sx <= bw && sy <= bh) || (sy <= bw && sx <= bh);
+      let fitCell;
+      if (p.pieces) {
+        const sizes = p.pieces.map((pc) => { const b = pc.bounds().size; return `${Math.round(b[0])}×${Math.round(b[1])}`; }).join(', ');
+        fitCell = `<td class="${p.fits ? 'ok' : 'bad'}">разрезана на ${p.pieces.length} ч.<div class="hint">${sizes}</div></td>`;
+      } else {
+        const diag = p.fits && p.fitAngle !== 0 && p.fitAngle !== 90;
+        fitCell = `<td class="${p.fits ? 'ok' : 'bad'}">${p.fits ? (diag ? 'да, по диагонали' : 'да') : 'не влезает'}</td>`;
+      }
       return `<tr><td>${escHtml(p.name)}${p.note ? `<div class="hint">${escHtml(p.note)}</div>` : ''}</td>` +
-        `<td class="num">${p.qty}</td><td class="num">${f1(sx)} × ${f1(sy)} × ${f1(sz)}</td>` +
-        `<td class="${fits ? 'ok' : 'bad'}">${fits ? 'да' : 'не влезает'}</td>` +
+        `<td class="num">${p.qty}</td><td class="num">${f1(sx)} × ${f1(sy)} × ${f1(sz)}</td>` + fitCell +
         `<td><button type="button" data-action="cam-part" data-part="${p.key}">STL</button></td></tr>`;
     }).join('');
     $('#cam-parts').innerHTML = `<thead><tr><th>Деталь</th><th>Шт.</th><th>Габарит при печати, мм</th><th>Стол ${bw}×${bh}</th><th></th></tr></thead><tbody>${rows}</tbody>`;
@@ -617,13 +655,19 @@
     };
     const P = Cam.placements(camera, camExt);
     for (const part of camera.parts) {
+      const bodies = part.piecesLocal || [part.csg];
       for (const m of P[part.key] || []) {
         const flip = CSGM.det(m) < 0;
-        for (const poly of part.csg.polygons) {
-          let vs = poly.vertices.map((q) => CSGM.apply(m, q));
-          if (flip) vs = vs.reverse();
-          pushPoly(vs, part.color);
-        }
+        bodies.forEach((body, bi) => {
+          // части составной детали — чуть разными оттенками, чтобы были видны швы
+          const k = bodies.length > 1 && bi % 2 ? 0.78 : 1;
+          const col = part.color.map((x) => Math.min(1, x * k + (k < 1 ? 0.03 : 0)));
+          for (const poly of body.polygons) {
+            let vs = poly.vertices.map((q) => CSGM.apply(m, q));
+            if (flip) vs = vs.reverse();
+            pushPoly(vs, col);
+          }
+        });
       }
     }
     if ($('#cv-bellows').checked) {
@@ -641,16 +685,18 @@
   }
 
   function camPartSTL(part) {
-    return Ex.stlBinary(Cam.printOriented(part, part.csg).toTriangles(), `bellows camera: ${part.key}`);
+    const [W, H] = camBedSize();
+    return Ex.stlBinary(Cam.layPiece(part.printed, W, H).toTriangles(), `bellows camera: ${part.key}`);
   }
 
   function camZip() {
     buildCamParts();
     const files = [];
     camera.parts.forEach((p, i) => {
-      files.push({ name: `camera/${String(i + 1).padStart(2, '0')}_${p.key}_x${p.qty}.stl`, data: camPartSTL(p) });
+      for (const f of camPartFiles(p)) files.push({ name: `camera/${String(i + 1).padStart(2, '0')}_${f.name}`, data: f.data });
     });
-    files.push({ name: 'README.txt', data: Cam.assemblyText(camera, model).replace(/\n/g, '\r\n') });
+    const split = camera.parts.filter((p) => p.pieces).map((p) => ({ name: p.name, n: p.pieces.length }));
+    files.push({ name: 'README.txt', data: Cam.assemblyText(camera, model, split).replace(/\n/g, '\r\n') });
     files.push({ name: 'params.json', data: JSON.stringify(allParams(params), null, 2) });
     files.push({ name: 'bellows/pattern.svg', data: Ex.patternSVG(model) });
     files.push({ name: 'bellows/pattern.dxf', data: Ex.dxfPattern(model) });
@@ -703,7 +749,9 @@
       const part = camera && camera.ok && camera.parts.find((p) => p.key === btn.dataset.part);
       if (!part) return;
       buildCamParts();
-      download(`${part.key}_x${part.qty}.stl`, camPartSTL(part), 'model/stl');
+      const files = camPartFiles(part);
+      if (files.length === 1) download(files[0].name, files[0].data, 'model/stl');
+      else download(`${part.key}_parts.zip`, Ex.makeZip(files), 'application/zip');
     },
     'cam-zip': (btn) => {
       if (!camera || !camera.ok) return;
@@ -760,7 +808,10 @@
       camExt = Number(e.target.value);
       if (camera && camera.ok) renderCamScene(true);
     });
-    for (const id of ['#bed-w', '#bed-h']) $(id).addEventListener('change', () => { dirty.camera = true; });
+    // размер стола общий для плашек и деталей камеры
+    for (const [id, key] of [['#bed-w', 'camBedW'], ['#bed-h', 'camBedH']]) {
+      $(id).addEventListener('change', (e) => { params[key] = e.target.value; fillForm(); update(); });
+    }
     $('#ext-range').addEventListener('input', (e) => {
       extValue = Number(e.target.value);
       if (model && model.ok) render3D(true);

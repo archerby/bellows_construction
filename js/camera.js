@@ -67,6 +67,9 @@
     camGroove: true,
     camTripod: '1/4',
     camClearance: 0.3,
+    camSplit: true, // разбивать детали, не влезающие на стол
+    camBedW: 220,
+    camBedH: 220,
   };
 
   function normalizeCamParams(input) {
@@ -88,6 +91,8 @@
     p.camClearance = Math.max(0, Math.min(1, p.camClearance));
     p.camRise = Math.max(0, p.camRise);
     p.camShift = Math.max(0, p.camShift);
+    p.camBedW = Math.max(60, p.camBedW);
+    p.camBedH = Math.max(60, p.camBedH);
     return p;
   }
 
@@ -645,6 +650,169 @@
   }
 
   // ---------------------------------------------------------------------
+  // Разбиение больших деталей под стол принтера
+  // ---------------------------------------------------------------------
+  const DOVETAIL_L = 8; // глубина «ласточкина хвоста»
+
+  /** Периметр сечения сетки плоскостью {axis} = t (сумма длин отрезков сечения). */
+  function sectionSegments(tris, axis, t) {
+    const segs = [];
+    for (const tr of tris) {
+      const d0 = tr[0][axis] - t, d1 = tr[1][axis] - t, d2 = tr[2][axis] - t;
+      const ds = [d0, d1, d2], pts = [];
+      for (let i = 0; i < 3; i++) {
+        const j = (i + 1) % 3, da = ds[i], db = ds[j];
+        if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+          const k = da / (da - db), a = tr[i], b = tr[j];
+          pts.push([a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]);
+        }
+      }
+      if (pts.length === 2) segs.push(pts);
+    }
+    return segs;
+  }
+  const segLen = (segs) => segs.reduce((s, [a, b]) => s + Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]), 0);
+
+  /** Участки материала вдоль оси other на линии разреза: [[v0, v1], …]. */
+  function sectionIslands(segs, other) {
+    const iv = segs.map(([a, b]) => [Math.min(a[other], b[other]), Math.max(a[other], b[other])]).sort((p, q) => p[0] - q[0]);
+    const out = [];
+    for (const [a, b] of iv) {
+      if (out.length && a <= out[out.length - 1][1] + 0.3) out[out.length - 1][1] = Math.max(out[out.length - 1][1], b);
+      else out.push([a, b]);
+    }
+    return out;
+  }
+
+  /**
+   * Выбор положения разреза: ищем место, где сечение «чистое» (без отверстий, гнёзд, пазов) —
+   * там периметр сечения минимален — с запасом под шип, как можно ближе к середине допустимого диапазона.
+   */
+  function chooseCut(tris, b, axis, La) {
+    const L = DOVETAIL_L, lo = b.min[axis], hi = b.max[axis];
+    let t0 = hi - La, t1 = lo + La - L - 1, ideal;
+    if (t0 <= t1) ideal = (t0 + t1) / 2;
+    else { t1 = lo + La - L - 1; t0 = Math.max(lo + 15, t1 - 40); ideal = t1; } // понадобится ещё разрез
+    if (t1 < lo + 5) return null;
+    const step = 1, w0 = 4, w1 = L + 4;
+    const grid = new Map();
+    const per = (t) => {
+      const k = Math.round(t / step);
+      if (!grid.has(k)) grid.set(k, segLen(sectionSegments(tris, axis, k * step + 0.0137)));
+      return grid.get(k);
+    };
+    let best = null;
+    for (let t = Math.ceil(t0); t <= Math.floor(t1); t += step) {
+      let m = 0;
+      for (let u = t - w0; u <= t + w1; u += step) m = Math.max(m, per(u));
+      const score = m + 0.05 * Math.abs(t - ideal);
+      if (!best || score < best.score) best = { t: t + 0.0137, score };
+    }
+    return best;
+  }
+
+  /** Разрез по плоскости {axis} = t с «ласточкиными хвостами» на каждом участке материала. */
+  function cutWithDovetails(piece, b, axis, t, c) {
+    const other = 1 - axis, L = DOVETAIL_L, pad = 5;
+    const zr = [b.min[2] - pad, b.max[2] + pad];
+    const region = (u0, u1, v0, v1) => {
+      const mn = [0, 0, zr[0]], mx = [0, 0, zr[1]];
+      mn[axis] = u0; mx[axis] = u1; mn[other] = v0; mx[other] = v1;
+      return CSG.box(mn, mx);
+    };
+    const trap = (u0, u1, vc, h0, h1) => {
+      const uv = [[u0, vc - h0], [u1, vc - h1], [u1, vc + h1], [u0, vc + h0]];
+      const pts = uv.map(([u, v]) => (axis === 0 ? [u, v] : [v, u]));
+      return CSG.prism(pts, zr[0], zr[1]);
+    };
+    const islands = sectionIslands(sectionSegments(piece.toTrianglesRaw(), axis, t), other);
+    const tongues = [], sockets = [];
+    for (const [v0, v1] of islands) {
+      const w = v1 - v0;
+      if (w < 9) continue;
+      const vc = (v0 + v1) / 2, hw = Math.min(w * 0.32, 9), nw = hw * 0.62;
+      const slope = (hw - nw) / L, nw0 = nw - 0.5 * slope;
+      tongues.push(trap(t - 0.5, t + L, vc, nw0, hw));
+      sockets.push(trap(t - 0.5, t + L + c, vc, nw0 + c, hw + c * (1 + slope)));
+    }
+    const lo = b.min[axis] - pad, hi = b.max[axis] + pad, vlo = b.min[other] - pad, vhi = b.max[other] + pad;
+    let regA = region(lo, t, vlo, vhi);
+    if (tongues.length) regA = regA.unionAll(tongues);
+    const A = piece.intersect(regA);
+    const B = piece.intersect(region(t, hi, vlo, vhi)).subtractAll(sockets);
+    return [A, B, tongues.length];
+  }
+
+  /**
+   * Разбить деталь (уже в ориентации печати, z — вверх) на части, помещающиеся на стол bedW×bedH
+   * (с поворотом на 90°). Возвращает массив CSG в тех же координатах.
+   */
+  function splitForBed(csg, bedW, bedH, c) {
+    const W = bedW - 6, H = bedH - 6;
+    const out = [], queue = [csg];
+    let guard = 0;
+    while (queue.length && guard++ < 40) {
+      const piece = queue.shift();
+      const b = piece.bounds();
+      if (fitsBed(piece, bedW, bedH)) { out.push(piece); continue; }
+      const axis = b.size[0] >= b.size[1] ? 0 : 1;
+      const La = b.size[1 - axis] <= Math.min(W, H) ? Math.max(W, H) : Math.min(W, H);
+      const cut = chooseCut(piece.toTrianglesRaw(), b, axis, La);
+      if (!cut) { out.push(piece); continue; }
+      const [A, B] = cutWithDovetails(piece, b, axis, cut.t, c);
+      queue.push(A, B);
+    }
+    return out.concat(queue);
+  }
+
+  /** Деталь или часть для печати: на столе, по центру; повёрнута так, чтобы поместиться (в т.ч. по диагонали). */
+  function layPiece(csg, bedW, bedH) {
+    let r = csg;
+    const ang = bedFitAngle(csg, bedW, bedH);
+    if (ang) r = r.transform(M.Rz(ang));
+    const b = r.bounds();
+    return r.translate(-(b.min[0] + b.max[0]) / 2, -(b.min[1] + b.max[1]) / 2, -b.min[2]);
+  }
+
+  /** Выпуклая оболочка точек в плоскости XY (монотонная цепь). */
+  function hull2d(points) {
+    const pts = points.map((p) => [p[0], p[1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lower = [], upper = [];
+    for (const p of pts) { while (lower.length >= 2 && cr(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+    for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (upper.length >= 2 && cr(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+    return lower.slice(0, -1).concat(upper.slice(0, -1));
+  }
+
+  /**
+   * Под каким углом (в градусах) деталь помещается на стол bedW×bedH с полями по 3 мм:
+   * 0 или 90 — прямо, другой — по диагонали; null — не помещается.
+   */
+  function bedFitAngle(csg, bedW, bedH) {
+    const W = bedW - 6, H = bedH - 6;
+    const pts = [];
+    for (const p of csg.polygons) for (const v of p.vertices) pts.push(v);
+    const hull = hull2d(pts);
+    const tryAngle = (deg) => {
+      const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const [x, y] of hull) {
+        const u = x * c - y * s, v = x * s + y * c;
+        if (u < x0) x0 = u; if (u > x1) x1 = u; if (v < y0) y0 = v; if (v > y1) y1 = v;
+      }
+      return x1 - x0 <= W && y1 - y0 <= H;
+    };
+    if (tryAngle(0)) return 0;
+    if (tryAngle(90)) return 90;
+    for (let d = 1; d < 180; d += 0.5) if (d !== 90 && tryAngle(d)) return d;
+    return null;
+  }
+  const fitsBed = (csg, bedW, bedH) => bedFitAngle(csg, bedW, bedH) !== null;
+
+  /** Обратная к матрице поворота (без переноса). */
+  const invRot = (m) => [m[0], m[4], m[8], 0, m[1], m[5], m[9], 0, m[2], m[6], m[10], 0];
+
+  // ---------------------------------------------------------------------
   // Покупные изделия
   // ---------------------------------------------------------------------
   function hardwareList(D, cp, bm) {
@@ -673,7 +841,7 @@
   }
 
   /** Текст README для архива: печать, сборка, юстировка, списки деталей. */
-  function assemblyText(cam, bm) {
+  function assemblyText(cam, bm, split) {
     const D = cam.dims, p = cam.params, F = FORMATS[p.camFormat];
     const f = (x) => (Math.round(x * 10) / 10).toString().replace('.', ',');
     const L = [];
@@ -714,6 +882,15 @@
     L.push('   Штативная площадка: гайка штативной резьбы в гнездо сверху, площадка крепится под рельс двумя');
     L.push('   Т-гайками M5. Заглушки на торцы рельса — чтобы каретки не соскочили.');
     L.push('');
+    if (split && split.length) {
+      L.push('   СОСТАВНЫЕ ДЕТАЛИ. Не поместившиеся на стол детали разрезаны на части (номер части — в имени файла):');
+      for (const x of split) L.push(`     ${x.name} — ${x.n} ч.`);
+      L.push('   Части соединяются «ласточкиным хвостом» с зазором и клеем (для PLA — цианоакрилат или эпоксидная смола,');
+      L.push('   для PETG — эпоксидка или дихлорметан). Шип вставляется сверху. Склеивайте на ровном стекле, лицевой');
+      L.push('   стороной вниз, и прижмите до высыхания. Плиту задника и рамку матового стекла после склейки проверьте');
+      L.push('   линейкой на плоскость: опорная поверхность должна остаться ровной.');
+    }
+    L.push('');
     L.push('3. ЮСТИРОВКА');
     L.push('   Сфокусируйтесь по матовому стеклу на резкий объект (лупа), снимите тестовый кадр при открытой диафрагме.');
     L.push('   Если плёнка нерезкая — плоскость стекла не совпадает с плоскостью плёнки: подложите тонкие прокладки');
@@ -735,5 +912,6 @@
   return {
     FORMATS, BOARDS, SHUTTERS, RAILS, TRIPOD, CAM_DEFAULTS, K,
     normalizeCamParams, computeCamera, placements, printOriented, assemblyText, railCSG,
+    splitForBed, layPiece, invRot, fitsBed, bedFitAngle, sectionSegments, DOVETAIL_L,
   };
 });

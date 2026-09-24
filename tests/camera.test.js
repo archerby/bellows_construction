@@ -86,3 +86,52 @@ test('README сборки перечисляет все детали и поку
   for (const p of cam.parts) assert.ok(txt.includes(p.name), p.name);
   for (const h of cam.hardware) assert.ok(txt.includes(h.name), h.name);
 });
+
+const BIG = [{ frontW: 160, frontH: 160, rearW: 310, rearH: 310, maxExt: 650, pitch: 16 }, { camFormat: '8x10' }];
+
+test('посадка на стол: прямо, по диагонали или никак', () => {
+  const bar = (len) => CSG.box([0, 0, 0], [len, 36, 12]);
+  assert.equal(C.bedFitAngle(bar(200), 220, 220), 0);
+  const diag = C.bedFitAngle(bar(229), 220, 220);
+  assert.ok(diag > 0 && diag !== 90, 'длинная вертикаль ложится по диагонали');
+  assert.equal(C.bedFitAngle(bar(360), 220, 220), null);
+});
+
+test('разбиение: задняя рамка 8×10 на столе 220 — 4 части, без наложений, замкнутые', () => {
+  const cam = C.computeCamera(G.computeBellows(BIG[0]), BIG[1]);
+  const part = cam.parts.find((p) => p.key === 'frame_rear');
+  const whole = part.build().transform(part.printT);
+  const pieces = C.splitForBed(whole, 220, 220, 0.3);
+  assert.equal(pieces.length, 4);
+  const vol = pieces.reduce((s, p) => s + p.volume(), 0);
+  assert.ok(vol <= whole.volume() + 1e-6 && vol > whole.volume() * 0.995, 'зазоры шипов съедают меньше 0,5 % объёма');
+  for (let i = 0; i < pieces.length; i++) {
+    assert.ok(C.fitsBed(pieces[i], 220, 220), `часть ${i + 1} помещается`);
+    assert.equal(edgesUnpaired(C.layPiece(pieces[i], 220, 220).toTriangles()), 0, `часть ${i + 1} замкнута`);
+    for (let j = i + 1; j < pieces.length; j++) assert.ok(pieces[i].intersect(pieces[j]).volume() < 1e-3, `части ${i + 1} и ${j + 1} не пересекаются`);
+  }
+});
+
+test('разбиение не режет через ось наклона задней рамки', () => {
+  const cam = C.computeCamera(G.computeBellows(BIG[0]), BIG[1]);
+  const part = cam.parts.find((p) => p.key === 'frame_rear');
+  const whole = part.build().transform(part.printT);
+  const pieces = C.splitForBed(whole, 220, 220, 0.3);
+  // зона оси наклона и гнезда гайки (y≈0 у боковин) целиком в одной части
+  const S = cam.dims.Sr;
+  for (const sx of [-1, 1]) {
+    const zone = CSG.box([sx > 0 ? S / 2 - 16 : -S / 2, -8, -1], [sx > 0 ? S / 2 : -S / 2 + 16, 8, 20]);
+    const owners = pieces.filter((p) => p.intersect(zone).volume() > 1e-3);
+    assert.equal(owners.length, 1);
+  }
+});
+
+test('все детали 8×10 печатаются на столе 220 (целиком или частями)', () => {
+  const cam = C.computeCamera(G.computeBellows(BIG[0]), BIG[1]);
+  for (const p of cam.parts) {
+    const pr = p.build().transform(p.printT);
+    if (C.fitsBed(pr, 220, 220)) continue;
+    const pieces = C.splitForBed(pr, 220, 220, 0.3);
+    assert.ok(pieces.length > 1 && pieces.every((x) => C.fitsBed(x, 220, 220)), p.key);
+  }
+});
