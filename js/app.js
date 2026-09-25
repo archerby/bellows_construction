@@ -66,6 +66,15 @@
   const opts = (obj) => Object.entries(obj).map(([k, v]) => [k, v.name]);
   const CAM_SCHEMA = [
     {
+      legend: 'Тип камеры',
+      fields: [
+        { key: 'camStyle', label: 'Конструкция', type: 'select', options: opts(Cam.STYLES),
+          hint: 'Монорельсовая — все подвижки, для студии. Складная — компактная коробка с откидной станиной: подъём и наклон спереди, задник неподвижный.' },
+        { key: 'camFieldRise', label: 'Подъём у складной, ±мм', hint: 'Больше подъём — выше коробка.' },
+        { key: 'camLensFold', label: 'Выступ объектива, мм', hint: 'Насколько объектив выступает вперёд от платы. Складная коробка делается такой глубины, чтобы он поместился внутрь.' },
+      ],
+    },
+    {
       legend: 'Формат и кассеты',
       fields: [
         { key: 'camFormat', label: 'Формат', type: 'select', options: opts(Cam.FORMATS) },
@@ -594,6 +603,18 @@
     const count = camera.parts.reduce((s, p) => s + p.qty * (p.pieces ? p.pieces.length : 1), 0);
     const nSplit = camera.parts.filter((p) => p.pieces).length;
     const vol = camera.parts.reduce((s, p) => s + p.qty * p.volume, 0) / 1000;
+    if (D.style === 'field') {
+      const fb = D.fb;
+      $('#cam-summary').innerHTML = [
+        card('Сложенная камера', `${Math.round(fb.closed.w)}×${Math.round(fb.closed.h)}×${Math.round(fb.closed.d)}`, 'мм, с задником'),
+        card('Растяжение', `${Math.round(fb.eMin)}…${Math.round(fb.eMax)}`, `мм на станине ${Math.round(fb.Lbed)} мм`),
+        card('Объектив', `≤ ${fb.lensFold} мм`, 'выступ вперёд, чтобы сложилась'),
+        card('Подвижки', `±${camera.params.camFieldRise} мм`, 'подъём и наклон спереди'),
+        card('Деталей для печати', count, nSplit ? `${camera.parts.length} видов, ${nSplit} разрезаны на части` : `${camera.parts.length} видов`),
+        card('Пластик', `≈ ${Math.round(vol * 1.25 * 0.6)} г`, `объём тел ${Math.round(vol)} см³, заполнение ~40 %`),
+      ].join('');
+      return;
+    }
     $('#cam-summary').innerHTML = [
       card('Ось над рельсом', f1(D.A), 'мм'),
       card('Передняя рамка', `${D.Sf}×${D.Sf}`, `плата ${D.board.w}×${D.board.h}`),
@@ -636,7 +657,12 @@
     if (camExt === null) camExt = Math.round(lo + (hi - lo) * 0.45);
     camExt = Math.max(lo, Math.min(hi, camExt));
     range.value = camExt;
-    $('#cam-ext-out').textContent = `${f1(camExt)} мм`;
+    const isField = D.style === 'field';
+    const folded = isField && $('#cv-folded').checked;
+    $('#cv-folded-wrap').hidden = !isField;
+    $('#cv-rail-wrap').hidden = isField;
+    range.disabled = folded;
+    $('#cam-ext-out').textContent = folded ? 'сложена' : `${f1(camExt)} мм`;
 
     const tris = [];
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
@@ -653,7 +679,7 @@
       for (const q of vs) for (let i = 0; i < 3; i++) { if (q[i] < min[i]) min[i] = q[i]; if (q[i] > max[i]) max[i] = q[i]; }
       for (let i = 1; i < vs.length - 1; i++) for (const q of [vs[0], vs[i], vs[i + 1]]) tris.push(q[0], q[1], q[2], n[0], n[1], n[2], col[0], col[1], col[2]);
     };
-    const P = Cam.placements(camera, camExt);
+    const P = Cam.placements(camera, camExt, folded);
     for (const part of camera.parts) {
       const bodies = part.piecesLocal || [part.csg];
       for (const m of P[part.key] || []) {
@@ -671,11 +697,15 @@
       }
     }
     if ($('#cv-bellows').checked) {
-      const mesh = Geo.buildMesh3D(model, camExt, { stiffOffset: 0 });
-      const oz = Cam.K.Tf + Cam.K.tPlate;
-      for (const f of mesh.faces) pushPoly(f.quad.map((q) => [q[0], q[1] + D.A, q[2] + oz]), f.collar ? [0.3, 0.28, 0.26] : [0.17, 0.17, 0.19]);
+      const o = Cam.bellowsOrigin(camera, camExt, folded);
+      const mesh = Geo.buildMesh3D(model, o.e, { stiffOffset: 0 });
+      for (const f of mesh.faces) pushPoly(f.quad.map((q) => [q[0], q[1] + o.y, q[2] + o.z]), f.collar ? [0.3, 0.28, 0.26] : [0.17, 0.17, 0.19]);
     }
-    if ($('#cv-rail').checked) {
+    if ($('#cv-lens').checked) {
+      // условный объектив — показывает, помещается ли он в сложенную коробку
+      for (const poly of Cam.lensDummy(camera, camExt, folded).polygons) pushPoly(poly.vertices, [0.08, 0.08, 0.09]);
+    }
+    if (!isField && $('#cv-rail').checked) {
       if (!camera.railCsg) camera.railCsg = Cam.railCSG(D);
       for (const poly of camera.railCsg.polygons) pushPoly(poly.vertices, [0.74, 0.76, 0.8]);
     }
@@ -803,7 +833,7 @@
     for (const id of ['#pat-stiff', '#pat-labels', '#print-paper']) $(id).addEventListener('change', () => { dirty.pattern = true; renderActive(); });
     for (const id of ['#stl-mode', '#bed-w', '#bed-h', '#bed-gap', '#bed-diag']) $(id).addEventListener('change', () => { dirty.stl = true; renderActive(); });
     for (const id of ['#v-fabric', '#v-stiff', '#v-edges']) $(id).addEventListener('change', () => model && model.ok && render3D(true));
-    for (const id of ['#cv-bellows', '#cv-rail']) $(id).addEventListener('change', () => camera && camera.ok && renderCamScene(true));
+    for (const id of ['#cv-bellows', '#cv-rail', '#cv-folded', '#cv-lens']) $(id).addEventListener('change', () => camera && camera.ok && renderCamScene(true));
     $('#cam-ext').addEventListener('input', (e) => {
       camExt = Number(e.target.value);
       if (camera && camera.ok) renderCamScene(true);

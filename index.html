@@ -112,7 +112,7 @@
       <div class="tab-panel" id="tab-camera">
         <div class="cam-grid">
           <aside class="cam-params" id="cam-params" aria-label="Параметры камеры">
-            <p class="cam-intro">Монорельсовая камера под этот мех. Печатается всё, кроме рельса (алюминиевый профиль), крепежа, пружин и матового стекла.</p>
+            <p class="cam-intro">Камера под этот мех: монорельсовая или складная полевая. Печатается всё, кроме крепежа, пружин, матового стекла и (у монорельсовой) алюминиевого профиля.</p>
           </aside>
           <div class="cam-main">
             <div class="summary" id="cam-summary"></div>
@@ -122,8 +122,10 @@
                 <input type="range" id="cam-ext" min="0" max="100" step="1">
                 <output id="cam-ext-out"></output>
               </label>
+              <label class="check" id="cv-folded-wrap" hidden><input type="checkbox" id="cv-folded"> сложена</label>
               <label class="check"><input type="checkbox" id="cv-bellows" checked> мех</label>
-              <label class="check"><input type="checkbox" id="cv-rail" checked> рельс</label>
+              <label class="check"><input type="checkbox" id="cv-lens" checked> объектив</label>
+              <label class="check" id="cv-rail-wrap"><input type="checkbox" id="cv-rail" checked> рельс</label>
               <span class="sep"></span>
               <button type="button" data-action="cam-png">PNG</button>
               <button type="button" data-action="cam-view-reset" class="ghost">Исходный вид</button>

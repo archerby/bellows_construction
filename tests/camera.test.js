@@ -135,3 +135,53 @@ test('все детали 8×10 печатаются на столе 220 (цел
     assert.ok(pieces.length > 1 && pieces.every((x) => C.fitsBed(x, 220, 220)), p.key);
   }
 });
+
+// ---------- складная полевая камера ----------
+const FIELD = [{ maxExt: 260 }, { camStyle: 'field' }];
+
+test('складная камера: все детали замкнуты, на столе 220, расстановка = количеству', () => {
+  const cam = C.computeCamera(G.computeBellows(FIELD[0]), FIELD[1]);
+  assert.equal(cam.ok, true, cam.errors.join('; '));
+  const keys = cam.parts.map((p) => p.key);
+  for (const k of ['body', 'bed', 'sled']) assert.ok(keys.includes(k), k);
+  for (const k of ['carriage', 'frame_rear', 'tripod_block']) assert.ok(!keys.includes(k), 'лишняя деталь ' + k);
+  const P = C.placements(cam, 150, false);
+  for (const p of cam.parts) {
+    const s = C.printOriented(p, p.build());
+    assert.ok(s.volume() > 0, p.key);
+    assert.equal(edgesUnpaired(s.toTriangles()), 0, p.key + ': незамкнутые рёбра');
+    assert.ok(C.fitsBed(s, 220, 220), p.key + ' не помещается на стол 220');
+    assert.equal((P[p.key] || []).length, p.qty, p.key + ': экземпляров');
+  }
+});
+
+test('складная камера: ничего не сталкивается — открыта (мин/макс) и сложена, объектив помещается', () => {
+  for (const [b, c] of [FIELD, [{ frontW: 120, frontH: 120, rearW: 210, rearH: 210, maxExt: 300, pitch: 14 }, { camStyle: 'field', camFormat: '5x7', camBoard: 'sinar', camShutter: 'copal3' }]]) {
+    const cam = C.computeCamera(G.computeBellows(b), c);
+    const built = {};
+    for (const p of cam.parts) built[p.key] = p.build();
+    for (const [e, folded] of [[cam.dims.eMin, false], [cam.dims.eMax, false], [0, true]]) {
+      const P = C.placements(cam, e, folded);
+      const objs = [];
+      for (const p of cam.parts) (P[p.key] || []).forEach((m, i) => objs.push({ name: `${p.key}#${i}`, csg: built[p.key].transform(m) }));
+      objs.push({ name: 'объектив', csg: C.lensDummy(cam, e, folded) });
+      for (let i = 0; i < objs.length; i++) {
+        for (let j = i + 1; j < objs.length; j++) {
+          const a = objs[i].csg.bounds(), q = objs[j].csg.bounds();
+          if ([0, 1, 2].some((k) => a.max[k] < q.min[k] - 0.01 || q.max[k] < a.min[k] - 0.01)) continue;
+          const v = objs[i].csg.intersect(objs[j].csg).volume();
+          assert.ok(v < 0.5, `${folded ? 'сложена' : 'e=' + Math.round(e)}: ${objs[i].name} × ${objs[j].name} = ${v.toFixed(1)} мм³`);
+        }
+      }
+    }
+  }
+});
+
+test('складная камера: станина ограничивает растяжение и об этом предупреждает', () => {
+  const cam = C.computeCamera(G.computeBellows({ maxExt: 400 }), { camStyle: 'field' });
+  assert.ok(cam.dims.eMax < 400 && cam.dims.eMax === cam.dims.fb.eMaxGeom);
+  assert.ok(cam.warnings.some((w) => w.includes('Станина')));
+  const txt = C.assemblyText(cam, G.computeBellows({ maxExt: 400 }), []);
+  assert.match(txt, /СКЛАДНАЯ/);
+  for (const h of cam.hardware) assert.ok(txt.includes(h.name), h.name);
+});
