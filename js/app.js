@@ -713,6 +713,17 @@
       for (const poly of h.body.polygons) pushPoly(poly.vertices, [0.1, 0.1, 0.11]);
       for (const poly of h.flap.polygons) pushPoly(poly.vertices, [0.55, 0.12, 0.1]);
     }
+    if ($('#cv-fx').checked) {
+      // покупной крепёж на своих местах: болты, винты, шайбы, гайки
+      for (const x of Cam.fastenerLayout(camera, camExt, folded, { holder: holderIn })) {
+        if (!x.len) continue;
+        const S = Cam.fastenerSolids(x);
+        for (const [k, body] of Object.entries(S)) {
+          const col = k === 'nut' || k === 'washer' ? [0.62, 0.64, 0.68] : [0.78, 0.8, 0.83];
+          for (const poly of body.polygons) pushPoly(poly.vertices, col);
+        }
+      }
+    }
     if ($('#cv-lens').checked) {
       // условный объектив — показывает, помещается ли он в сложенную коробку
       for (const poly of Cam.lensDummy(camera, camExt, folded).polygons) pushPoly(poly.vertices, [0.08, 0.08, 0.09]);
@@ -845,7 +856,7 @@
     for (const id of ['#pat-stiff', '#pat-labels', '#print-paper']) $(id).addEventListener('change', () => { dirty.pattern = true; renderActive(); });
     for (const id of ['#stl-mode', '#bed-w', '#bed-h', '#bed-gap', '#bed-diag']) $(id).addEventListener('change', () => { dirty.stl = true; renderActive(); });
     for (const id of ['#v-fabric', '#v-stiff', '#v-edges']) $(id).addEventListener('change', () => model && model.ok && render3D(true));
-    for (const id of ['#cv-bellows', '#cv-rail', '#cv-folded', '#cv-lens', '#cv-holder']) $(id).addEventListener('change', () => camera && camera.ok && renderCamScene(true));
+    for (const id of ['#cv-bellows', '#cv-rail', '#cv-folded', '#cv-lens', '#cv-holder', '#cv-fx']) $(id).addEventListener('change', () => camera && camera.ok && renderCamScene(true));
     $('#cam-ext').addEventListener('input', (e) => {
       camExt = Number(e.target.value);
       if (camera && camera.ok) renderCamScene(true);

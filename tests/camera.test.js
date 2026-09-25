@@ -208,3 +208,38 @@ test('задник: кассета входит между плитой и ра�
     assert.ok(Math.abs(z0 - C.backRefZ(cam, e, false)) < 1e-9);
   }
 });
+
+test('разбиение: соседние части сцеплены (шипы, у тонких стенок коробки — «в полдерева»)', () => {
+  const cam = C.computeCamera(G.computeBellows({ frontW: 120, frontH: 120, rearW: 210, rearH: 210, maxExt: 300, pitch: 14 }),
+    { camStyle: 'field', camFormat: '5x7', camBoard: 'sinar', camShutter: 'copal3' });
+  for (const key of ['body', 'bed']) {
+    const p = cam.parts.find((x) => x.key === key);
+    const pcs = C.splitForBed(p.build().transform(p.printT), 220, 220, 0.3), bb = pcs.map((x) => x.bounds());
+    assert.ok(pcs.length >= 2, key);
+    for (let i = 0; i < pcs.length; i++) for (let j = i + 1; j < pcs.length; j++) {
+      const ov = [0, 1].map((k) => Math.min(bb[i].max[k], bb[j].max[k]) - Math.max(bb[i].min[k], bb[j].min[k]));
+      if (!(ov[0] > 40 || ov[1] > 40)) continue; // касаются только углом
+      const lock = pcs[i].intersect(CSG.box(bb[j].min, bb[j].max)).volume() + pcs[j].intersect(CSG.box(bb[i].min, bb[i].max)).volume();
+      assert.ok(lock > 300, `${key}: части ${i + 1} и ${j + 1} стыкуются встык, без замка`);
+    }
+  }
+});
+
+test('монорельсовая камера: ничего не сталкивается — ни детали, ни рельс, ни кассета (мин/макс растяжение)', () => {
+  const cam = C.computeCamera(G.computeBellows({}), {});
+  const built = {};
+  for (const p of cam.parts) built[p.key] = p.build();
+  for (const e of [cam.dims.eMin, cam.dims.eMax]) for (const holder of [false, true]) {
+    const P = C.placements(cam, e, false, { holder });
+    const objs = [];
+    for (const p of cam.parts) (P[p.key] || []).forEach((m, i) => objs.push({ name: `${p.key}#${i}`, csg: built[p.key].transform(m) }));
+    objs.push({ name: 'рельс', csg: C.railCSG(cam.dims) }, { name: 'стекло', csg: C.groundGlassDummy(cam, e, false, { holder }) });
+    if (holder) objs.push({ name: 'кассета', csg: C.holderDummy(cam, e, false).body });
+    for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++) {
+      const a = objs[i].csg.bounds(), q = objs[j].csg.bounds();
+      if ([0, 1, 2].some((k) => a.max[k] < q.min[k] - 0.01 || q.max[k] < a.min[k] - 0.01)) continue;
+      const v = objs[i].csg.intersect(objs[j].csg).volume();
+      assert.ok(v < 0.5, `e=${Math.round(e)}: ${objs[i].name} × ${objs[j].name} = ${v.toFixed(1)} мм³`);
+    }
+  }
+});
