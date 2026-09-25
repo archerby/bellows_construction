@@ -96,6 +96,7 @@
     this.lineCount = data.lines.length / 3;
     this.radius = data.radius || 300;
     if (!keepCamera || !this.home) {
+      if (this.home) { this.cam.yaw = this.home.yaw; this.cam.pitch = this.home.pitch; }
       this.cam.target = data.center ? data.center.slice() : [0, 0, 0];
       this.cam.dist = this.radius * 2.6;
       this.home = JSON.parse(JSON.stringify(this.cam));

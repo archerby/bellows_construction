@@ -18,9 +18,9 @@
   // Справочные данные (ориентировочные — сверяйте со своими кассетами и платами)
   // ---------------------------------------------------------------------
   const FORMATS = {
-    '4x5': { name: '4×5″ (9×12)', film: [97, 122], holderW: 121, holderT: 10.5, depth: 5.0 },
-    '5x7': { name: '5×7″ (13×18)', film: [122, 173], holderW: 147, holderT: 11, depth: 5.8 },
-    '8x10': { name: '8×10″ (18×24)', film: [198, 249], holderW: 250, holderT: 12, depth: 6.6 },
+    '4x5': { name: '4×5″ (9×12)', film: [97, 122], holderW: 121, holderT: 10.5, holderL: 165, depth: 5.0 },
+    '5x7': { name: '5×7″ (13×18)', film: [122, 173], holderW: 147, holderT: 11, holderL: 218, depth: 5.8 },
+    '8x10': { name: '8×10″ (18×24)', film: [198, 249], holderW: 250, holderT: 12, holderL: 300, depth: 6.6 },
   };
   const BOARDS = {
     technika: { name: 'Linhof Technika / Wista / Chamonix — 96×99', w: 96, h: 99 },
@@ -378,7 +378,7 @@
 
     const dims = {
       style: cp.camStyle, rise: cp.camRise,
-      c, film, holderW, depth, board, shutterD, rail, tri, boardOpen, Or, Sf, Sr, guideIn, guideOut, guideC, guideH, Tg, glass,
+      c, film, holderW, holderT: F.holderT, holderL: F.holderL, depth, board, shutterD, rail, tri, boardOpen, Or, Sf, Sr, guideIn, guideOut, guideC, guideH, Tg, glass,
       wrap, baseTop, A, HuF, HuR, eMin, eMax, railL, railNeed, railZ0, bfF, bfR, K,
     };
     let zF = (e) => 0; // передняя плоскость передней рамки (монорельс: всегда 0)
@@ -600,7 +600,16 @@
       const pw = (D.glass[0] + 0.6) / 2, ph = (D.glass[1] + 0.6) / 2;
       const cuts = [box(-ow, -oh, -1, ow, oh, D.Tg + 1), box(-pw, -ph, D.depth, pw, ph, D.Tg + 1)];
       for (const sx of [-1, 1]) for (const y of barHoles) cuts.push(cylZ(D.Tg - 7, D.Tg + 1, sx * (Wg / 2 - 3.5), y, HW.M3.selfTap));
-      return s.subtractAll(cuts);
+      // заход 45° по лицевой стороне у торцов: вставляемая кассета сама приподнимает рамку на пружинах
+      const r = 2.5;
+      for (const sy of [-1, 1]) {
+        const y0 = sy * Hg / 2;
+        const tri = [[y0 - sy * r, -0.01], [y0 + sy * 0.01, -0.01], [y0 + sy * 0.01, r]];
+        cuts.push(CSG.prism(tri, -Wg / 2 - 1, Wg / 2 + 1).transform(ALONG.x));
+      }
+      // упор для пальца сверху — приподнять рамку, чтобы посмотреть на кассету или вынуть её
+      const grip = chamferPrism(rrect(-18, Hg / 2 - 10, 18, Hg / 2 - 4, 3), D.Tg - 0.5, D.Tg + 3, 0, 0.6);
+      return s.union(grip).subtractAll(cuts);
     }, face.up, 'лицевой стороной вниз; слой 0,1 мм');
 
     // --- Пружинные планки
@@ -767,16 +776,17 @@
   // ---------------------------------------------------------------------
   // Расстановка деталей в сборке при растяжении e
   // ---------------------------------------------------------------------
-  function placements(cam, e, folded) {
-    if (cam.dims.style === 'field') return fieldPlacements(cam, e, folded);
+  function placements(cam, e, folded, opts) {
+    if (cam.dims.style === 'field') return fieldPlacements(cam, e, folded, opts);
     const D = cam.dims;
+    const lift = opts && opts.holder ? D.holderT : 0; // вставленная кассета приподнимает рамку стекла
     const zr = cam.zR(e);
     const A = D.A, bt = D.baseTop;
     const zcF = K.Tf / 2, zcR = zr + K.Tf / 2; // стойки симметричны относительно оси наклона
     const T = M.T;
     const uxF = D.Sf / 2 + K.washer + K.Tu / 2, uxR = D.Sr / 2 + K.washer + K.Tu / 2;
     const lockX = D.rail.w / 2 + D.c + K.Tw;
-    const zb = zr + K.Tf + K.backT + D.Tg;
+    const zb = zr + K.Tf + K.backT + D.Tg + lift;
     return {
       carriage: [T(0, 0, zcF), T(0, 0, zcR)],
       base_front: [T(0, K.Tc, zcF)],
@@ -795,7 +805,7 @@
         M.chain(T(0, A - D.board.h / 2 - D.c - 6, -2.5), M.Rz(90)),
       ],
       back_plate: [T(0, A, zr + K.Tf)],
-      gg_frame: [T(0, A, zr + K.Tf + K.backT)],
+      gg_frame: [T(0, A, zr + K.Tf + K.backT + lift)],
       spring_bar: [T(0, A, zb), M.chain(T(0, A, zb + K.barT), M.Ry(180))],
       knob: [
         M.chain(T(uxF + K.Tu / 2, A, zcF), M.Ry(90)), M.chain(T(-uxF - K.Tu / 2, A, zcF), M.Ry(-90)),
@@ -811,12 +821,13 @@
   }
 
   /** Складная камера: открыта (станина вниз, стойка на расстоянии e) или сложена (стойка в коробке, станина закрыта). */
-  function fieldPlacements(cam, e, folded) {
+  function fieldPlacements(cam, e, folded, opts) {
     const D = cam.dims, f = D.fb, T = M.T;
     const ee = folded ? f.eMin : e;
     const zF = f.zF(ee), zc = zF + K.Tf / 2, A = f.A, st = f.sledTop;
     const ux = D.Sf / 2 + K.washer + K.Tu / 2;
-    const zb = f.depth + K.backT + D.Tg;
+    const lift = opts && opts.holder ? D.holderT : 0;
+    const zb = f.depth + K.backT + D.Tg + lift;
     return {
       body: [M.I()],
       bed: [folded ? M.Rx(90) : M.I()],
@@ -832,7 +843,7 @@
       bellows_frame_front: [T(0, A, zF + K.Tf)],
       bellows_frame_rear: [M.mul(T(0, A, f.zRW), M.Ry(180))],
       back_plate: [T(0, A, f.depth)],
-      gg_frame: [T(0, A, f.depth + K.backT)],
+      gg_frame: [T(0, A, f.depth + K.backT + lift)],
       spring_bar: [T(0, A, zb), M.chain(T(0, A, zb + K.barT), M.Ry(180))],
       knob_small: [
         M.chain(T(ux + K.Tu / 2, A, zc), M.Ry(90)), M.chain(T(-ux - K.Tu / 2, A, zc), M.Ry(-90)),
@@ -850,6 +861,31 @@
       return { y: D.fb.A, z: D.fb.zF(ee) + K.Tf + K.tPlate, e: ee };
     }
     return { y: D.A, z: K.Tf + K.tPlate, e };
+  }
+
+  /** Опорная плоскость задника (лицевая сторона кассеты / рамки стекла) в сборке. */
+  function backRefZ(cam, e, folded) {
+    const D = cam.dims;
+    if (D.style === 'field') return D.fb.depth + K.backT;
+    return cam.zR(e) + K.Tf + K.backT;
+  }
+
+  /** Матовое стекло (покупное) — в гнезде рамки, матовой стороной на плоскости плёнки. */
+  function groundGlassDummy(cam, e, folded, opts) {
+    const D = cam.dims;
+    const z = backRefZ(cam, e, folded) + D.depth + (opts && opts.holder ? D.holderT : 0);
+    return CSG.box([-D.glass[0] / 2, D.A - D.glass[1] / 2, z], [D.glass[0] / 2, D.A + D.glass[1] / 2, z + cam.params.camGlassT]);
+  }
+
+  /** Условная кассета (покупная), вставленная сверху между плитой задника и рамкой стекла. */
+  function holderDummy(cam, e, folded) {
+    const D = cam.dims;
+    const z = backRefZ(cam, e, folded);
+    const w = D.holderW / 2 - 0.3, L = D.holderL, t = D.holderT;
+    const yTop = D.A + D.film[1] / 2 + 22; // верхний край — клапан с тёмной шторкой торчит над камерой
+    const body = CSG.box([-w, yTop - L, z], [w, yTop, z + t]);
+    const flap = CSG.box([-w + 6, yTop, z + 1], [w - 6, yTop + 12, z + t - 1]);
+    return { body, flap };
   }
 
   /** Условный объектив (для показа и проверки складывания): цилиндр перед платой. */
@@ -1212,6 +1248,7 @@
   return {
     FORMATS, BOARDS, SHUTTERS, RAILS, TRIPOD, CAM_DEFAULTS, K,
     normalizeCamParams, computeCamera, placements, printOriented, assemblyText, railCSG, bellowsOrigin, lensDummy, STYLES, FK,
+    backRefZ, groundGlassDummy, holderDummy,
     splitForBed, layPiece, invRot, fitsBed, bedFitAngle, sectionSegments, DOVETAIL_L,
   };
 });

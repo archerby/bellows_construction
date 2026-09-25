@@ -185,3 +185,26 @@ test('складная камера: станина ограничивает р�
   assert.match(txt, /СКЛАДНАЯ/);
   for (const h of cam.hardware) assert.ok(txt.includes(h.name), h.name);
 });
+
+test('задник: кассета входит между плитой и рамкой стекла, стекло на своём месте (оба типа камер)', () => {
+  for (const [b, c] of [[{}, {}], FIELD]) {
+    const cam = C.computeCamera(G.computeBellows(b), c);
+    const e = (cam.dims.eMin + cam.dims.eMax) / 2;
+    const P = C.placements(cam, e, false, { holder: true });
+    const back = ['back_plate', 'gg_frame', 'spring_bar'].flatMap((k) => {
+      const part = cam.parts.find((p) => p.key === k);
+      const body = part.build();
+      return P[k].map((m) => body.transform(m));
+    });
+    const h = C.holderDummy(cam, e, false);
+    const glass = C.groundGlassDummy(cam, e, false, { holder: true });
+    for (const x of back) {
+      assert.ok(h.body.intersect(x).volume() < 0.5, 'кассета упирается в деталь задника');
+      assert.ok(glass.intersect(x).volume() < 0.5, 'стекло пересекает деталь задника');
+    }
+    // рамка стекла без кассеты лежит на опорной плоскости, с кассетой — поднята ровно на её толщину
+    const z0 = C.placements(cam, e, false, {}).gg_frame[0][11], z1 = P.gg_frame[0][11];
+    assert.ok(Math.abs(z1 - z0 - cam.dims.holderT) < 1e-9);
+    assert.ok(Math.abs(z0 - C.backRefZ(cam, e, false)) < 1e-9);
+  }
+});

@@ -118,6 +118,7 @@
   let camera = null;
   let camViewer = null;
   let camExt = null;
+  let lastCamStyle = null;
   let model = null;
   let activeTab = 'drawing';
   const dirty = { drawing: true, pattern: true, view3d: true, stl: true, camera: true };
@@ -320,7 +321,10 @@
 
   function renderActive() {
     if (activeTab === 'camera') {
-      if (dirty.camera) { dirty.camera = false; renderCamera(true); }
+      // при смене типа камеры — исходный вид, иначе сохраняем ракурс
+      const sameStyle = camera && camera.params.camStyle === lastCamStyle;
+      if (camera) lastCamStyle = camera.params.camStyle;
+      if (dirty.camera) { dirty.camera = false; renderCamera(sameStyle); }
       return;
     }
     if (!model || !model.ok) {
@@ -679,7 +683,8 @@
       for (const q of vs) for (let i = 0; i < 3; i++) { if (q[i] < min[i]) min[i] = q[i]; if (q[i] > max[i]) max[i] = q[i]; }
       for (let i = 1; i < vs.length - 1; i++) for (const q of [vs[0], vs[i], vs[i + 1]]) tris.push(q[0], q[1], q[2], n[0], n[1], n[2], col[0], col[1], col[2]);
     };
-    const P = Cam.placements(camera, camExt, folded);
+    const holderIn = $('#cv-holder').checked;
+    const P = Cam.placements(camera, camExt, folded, { holder: holderIn });
     for (const part of camera.parts) {
       const bodies = part.piecesLocal || [part.csg];
       for (const m of P[part.key] || []) {
@@ -700,6 +705,13 @@
       const o = Cam.bellowsOrigin(camera, camExt, folded);
       const mesh = Geo.buildMesh3D(model, o.e, { stiffOffset: 0 });
       for (const f of mesh.faces) pushPoly(f.quad.map((q) => [q[0], q[1] + o.y, q[2] + o.z]), f.collar ? [0.3, 0.28, 0.26] : [0.17, 0.17, 0.19]);
+    }
+    // матовое стекло (покупное) — в рамке на плоскости плёнки; кассета — между плитой задника и рамкой
+    for (const poly of Cam.groundGlassDummy(camera, camExt, folded, { holder: holderIn }).polygons) pushPoly(poly.vertices, [0.8, 0.82, 0.84]);
+    if (holderIn) {
+      const h = Cam.holderDummy(camera, camExt, folded);
+      for (const poly of h.body.polygons) pushPoly(poly.vertices, [0.1, 0.1, 0.11]);
+      for (const poly of h.flap.polygons) pushPoly(poly.vertices, [0.55, 0.12, 0.1]);
     }
     if ($('#cv-lens').checked) {
       // условный объектив — показывает, помещается ли он в сложенную коробку
@@ -833,7 +845,7 @@
     for (const id of ['#pat-stiff', '#pat-labels', '#print-paper']) $(id).addEventListener('change', () => { dirty.pattern = true; renderActive(); });
     for (const id of ['#stl-mode', '#bed-w', '#bed-h', '#bed-gap', '#bed-diag']) $(id).addEventListener('change', () => { dirty.stl = true; renderActive(); });
     for (const id of ['#v-fabric', '#v-stiff', '#v-edges']) $(id).addEventListener('change', () => model && model.ok && render3D(true));
-    for (const id of ['#cv-bellows', '#cv-rail', '#cv-folded', '#cv-lens']) $(id).addEventListener('change', () => camera && camera.ok && renderCamScene(true));
+    for (const id of ['#cv-bellows', '#cv-rail', '#cv-folded', '#cv-lens', '#cv-holder']) $(id).addEventListener('change', () => camera && camera.ok && renderCamScene(true));
     $('#cam-ext').addEventListener('input', (e) => {
       camExt = Number(e.target.value);
       if (camera && camera.ok) renderCamScene(true);
@@ -871,6 +883,8 @@
       e.target.value = '';
     });
     window.addEventListener('afterprint', () => { $('#print-area').innerHTML = ''; });
+    // ссылка с параметрами, открытая в уже загруженной вкладке, — перечитать параметры
+    window.addEventListener('hashchange', () => { load(); fillForm(); update(); });
     update();
   }
 
