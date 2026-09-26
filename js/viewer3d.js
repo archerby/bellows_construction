@@ -65,7 +65,7 @@
   function Viewer(canvas) {
     this.canvas = canvas;
     const gl = canvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: true });
-    if (!gl) throw new Error('WebGL недоступен в этом браузере');
+    if (!gl) throw new Error('WebGL is not available');
     this.gl = gl;
     this.triProg = compile(gl, VS_TRI, FS_TRI);
     this.lineProg = compile(gl, VS_LINE, FS_LINE);

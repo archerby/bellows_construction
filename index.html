@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Расчёт меха</title>
-  <meta name="description" content="Расчёт меха для крупноформатной камеры: геометрия, чертёж, развёртка, 3D-модель и STL плашек для печати">
+  <title>Bellows calculator</title>
+  <meta name="description" content="Bellows and large-format camera designer: geometry, drawing, pattern, 3D model and printable STL parts">
   <link rel="stylesheet" href="css/style.css">
   <style id="page-style"></style>
 </head>
@@ -15,56 +15,57 @@
         <path d="M2 6 L8 2 L12 22 L18 2 L22 22 L28 2 L32 22 L38 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
       </svg>
       <div>
-        <h1>Расчёт меха</h1>
-        <p>крупноформатная камера · мех · развёртка · детали для 3D-печати</p>
+        <h1 data-i18n="app.title">Bellows calculator</h1>
+        <p data-i18n="app.tagline"></p>
       </div>
     </div>
     <div class="top-actions">
-      <button type="button" id="btn-save-json" class="ghost">Сохранить параметры</button>
-      <label class="ghost file-btn">Загрузить…<input type="file" id="file-json" accept=".json,application/json" hidden></label>
-      <button type="button" id="btn-reset" class="ghost">Сбросить</button>
+      <select id="lang" class="lang" aria-label="Language"></select>
+      <button type="button" id="btn-save-json" class="ghost" data-i18n="btn.save"></button>
+      <label class="ghost file-btn"><span data-i18n="btn.load"></span><input type="file" id="file-json" accept=".json,application/json" hidden></label>
+      <button type="button" id="btn-reset" class="ghost" data-i18n="btn.reset"></button>
     </div>
   </header>
 
   <main class="layout">
-    <aside class="params" id="params" aria-label="Параметры меха"></aside>
+    <aside class="params" id="params" data-i18n-aria="aria.params"></aside>
 
     <section class="workspace">
       <div class="summary" id="summary"></div>
       <div id="messages" class="messages" aria-live="polite"></div>
 
       <nav class="tabs" role="tablist">
-        <button role="tab" data-tab="drawing" class="active">Чертёж</button>
-        <button role="tab" data-tab="pattern">Развёртка</button>
-        <button role="tab" data-tab="view3d">3D-модель</button>
-        <button role="tab" data-tab="stl">Плашки (STL)</button>
-        <button role="tab" data-tab="camera">Камера целиком</button>
+        <button role="tab" data-tab="drawing" class="active" data-i18n="tab.drawing"></button>
+        <button role="tab" data-tab="pattern" data-i18n="tab.pattern"></button>
+        <button role="tab" data-tab="view3d" data-i18n="tab.view3d"></button>
+        <button role="tab" data-tab="stl" data-i18n="tab.stl"></button>
+        <button role="tab" data-tab="camera" data-i18n="tab.camera"></button>
       </nav>
 
       <div class="tab-panel active" id="tab-drawing">
         <div class="toolbar">
-          <button type="button" data-action="drawing-svg">Скачать SVG</button>
-          <span class="hint">Колесо — масштаб, перетаскивание — сдвиг, двойной щелчок — вписать.</span>
+          <button type="button" data-action="drawing-svg" data-i18n="btn.svg"></button>
+          <span class="hint" data-i18n="hint.svgNav"></span>
         </div>
         <div class="svg-view" id="drawing-view"></div>
       </div>
 
       <div class="tab-panel" id="tab-pattern">
         <div class="toolbar">
-          <label class="check"><input type="checkbox" id="pat-stiff" checked> плашки</label>
-          <label class="check"><input type="checkbox" id="pat-labels" checked> подписи</label>
+          <label class="check"><input type="checkbox" id="pat-stiff" checked> <span data-i18n="cb.stiff"></span></label>
+          <label class="check"><input type="checkbox" id="pat-labels" checked> <span data-i18n="cb.labels"></span></label>
           <span class="sep"></span>
           <button type="button" data-action="pattern-svg">SVG 1:1</button>
           <button type="button" data-action="pattern-dxf">DXF</button>
           <span class="sep"></span>
-          <label>Печать на
+          <label><span data-i18n="lbl.printOn"></span>
             <select id="print-paper">
               <option value="A4">A4</option>
               <option value="A3">A3</option>
               <option value="A2">A2</option>
             </select>
           </label>
-          <button type="button" data-action="pattern-print">Печать 1:1 плиткой</button>
+          <button type="button" data-action="pattern-print" data-i18n="btn.printTiles"></button>
           <span class="hint" id="print-hint"></span>
         </div>
         <div class="svg-view" id="pattern-view"></div>
@@ -72,38 +73,38 @@
 
       <div class="tab-panel" id="tab-view3d">
         <div class="toolbar">
-          <label class="range">Растяжение
+          <label class="range"><span data-i18n="lbl.ext"></span>
             <input type="range" id="ext-range" min="0" max="100" step="0.5">
             <output id="ext-out"></output>
           </label>
-          <label class="check"><input type="checkbox" id="v-fabric" checked> материал</label>
-          <label class="check"><input type="checkbox" id="v-stiff" checked> плашки</label>
-          <label class="check"><input type="checkbox" id="v-edges" checked> рёбра</label>
+          <label class="check"><input type="checkbox" id="v-fabric" checked> <span data-i18n="cb.fabric"></span></label>
+          <label class="check"><input type="checkbox" id="v-stiff" checked> <span data-i18n="cb.stiff"></span></label>
+          <label class="check"><input type="checkbox" id="v-edges" checked> <span data-i18n="cb.edges"></span></label>
           <span class="sep"></span>
-          <button type="button" data-action="mesh-stl">STL поверхности меха</button>
+          <button type="button" data-action="mesh-stl" data-i18n="btn.meshStl"></button>
           <button type="button" data-action="view-png">PNG</button>
-          <button type="button" data-action="view-reset" class="ghost">Исходный вид</button>
+          <button type="button" data-action="view-reset" class="ghost" data-i18n="btn.viewReset"></button>
         </div>
         <div class="canvas-wrap">
           <canvas id="gl"></canvas>
-          <div class="canvas-hint">ЛКМ — вращать · ПКМ/Shift — сдвиг · колесо — масштаб</div>
+          <div class="canvas-hint" data-i18n="hint.3dNav"></div>
         </div>
       </div>
 
       <div class="tab-panel" id="tab-stl">
         <div class="toolbar">
-          <label>Режим
+          <label><span data-i18n="lbl.mode"></span>
             <select id="stl-mode">
-              <option value="bed">раскладка на стол принтера</option>
-              <option value="panels">по сторонам, как в развёртке</option>
-              <option value="pattern">вся развёртка одним файлом</option>
+              <option value="bed" data-i18n="stl.mode.bed"></option>
+              <option value="panels" data-i18n="stl.mode.panels"></option>
+              <option value="pattern" data-i18n="stl.mode.pattern"></option>
             </select>
           </label>
-          <label>Стол <input type="number" id="bed-w" value="220" min="50" step="1" class="short"> × <input type="number" id="bed-h" value="220" min="50" step="1" class="short"> мм</label>
-          <label>Промежуток <input type="number" id="bed-gap" value="2" min="0.5" step="0.5" class="short"> мм</label>
-          <label class="check" title="Плашки длиннее стола кладутся вдоль диагонали стола"><input type="checkbox" id="bed-diag" checked> длинные — по диагонали</label>
+          <label><span data-i18n="lbl.bed"></span> <input type="number" id="bed-w" value="220" min="50" step="1" class="short"> × <input type="number" id="bed-h" value="220" min="50" step="1" class="short"> <span data-i18n="u.mm"></span></label>
+          <label><span data-i18n="lbl.gap"></span> <input type="number" id="bed-gap" value="2" min="0.5" step="0.5" class="short"> <span data-i18n="u.mm"></span></label>
+          <label class="check" data-i18n-title="cb.diagTitle"><input type="checkbox" id="bed-diag" checked> <span data-i18n="cb.diag"></span></label>
           <span class="sep"></span>
-          <button type="button" data-action="stl-export" class="primary">Скачать STL</button>
+          <button type="button" data-action="stl-export" class="primary" data-i18n="btn.stl"></button>
         </div>
         <div class="stl-info" id="stl-info"></div>
         <div class="svg-view" id="stl-view"></div>
@@ -111,36 +112,36 @@
 
       <div class="tab-panel" id="tab-camera">
         <div class="cam-grid">
-          <aside class="cam-params" id="cam-params" aria-label="Параметры камеры">
-            <p class="cam-intro">Камера под этот мех: монорельсовая или складная полевая. Печатается всё, кроме крепежа, пружин, матового стекла и (у монорельсовой) алюминиевого профиля.</p>
+          <aside class="cam-params" id="cam-params" data-i18n-aria="aria.camParams">
+            <p class="cam-intro" data-i18n="cam.intro"></p>
           </aside>
           <div class="cam-main">
             <div class="summary" id="cam-summary"></div>
             <div id="cam-messages" class="messages" aria-live="polite"></div>
             <div class="toolbar">
-              <label class="range">Растяжение меха
+              <label class="range"><span data-i18n="lbl.camExt"></span>
                 <input type="range" id="cam-ext" min="0" max="100" step="1">
                 <output id="cam-ext-out"></output>
               </label>
-              <label class="check" id="cv-folded-wrap" hidden><input type="checkbox" id="cv-folded"> сложена</label>
-              <label class="check"><input type="checkbox" id="cv-bellows" checked> мех</label>
-              <label class="check"><input type="checkbox" id="cv-lens" checked> объектив</label>
-              <label class="check"><input type="checkbox" id="cv-holder"> кассета</label>
-              <label class="check"><input type="checkbox" id="cv-fx"> крепёж</label>
-              <label class="check" id="cv-rail-wrap"><input type="checkbox" id="cv-rail" checked> рельс</label>
+              <label class="check" id="cv-folded-wrap" hidden><input type="checkbox" id="cv-folded"> <span data-i18n="cv.folded"></span></label>
+              <label class="check"><input type="checkbox" id="cv-bellows" checked> <span data-i18n="cv.bellows"></span></label>
+              <label class="check"><input type="checkbox" id="cv-lens" checked> <span data-i18n="cv.lens"></span></label>
+              <label class="check"><input type="checkbox" id="cv-holder"> <span data-i18n="cv.holder"></span></label>
+              <label class="check"><input type="checkbox" id="cv-fx"> <span data-i18n="cv.fx"></span></label>
+              <label class="check" id="cv-rail-wrap"><input type="checkbox" id="cv-rail" checked> <span data-i18n="cv.rail"></span></label>
               <span class="sep"></span>
               <button type="button" data-action="cam-png">PNG</button>
-              <button type="button" data-action="cam-view-reset" class="ghost">Исходный вид</button>
-              <button type="button" data-action="cam-zip" class="primary">Скачать всё (ZIP)</button>
+              <button type="button" data-action="cam-view-reset" class="ghost" data-i18n="btn.viewReset"></button>
+              <button type="button" data-action="cam-zip" class="primary" data-i18n="btn.zip"></button>
             </div>
             <div class="canvas-wrap cam-canvas">
               <canvas id="gl-cam"></canvas>
-              <div class="canvas-hint">ЛКМ — вращать · ПКМ/Shift — сдвиг · колесо — масштаб</div>
+              <div class="canvas-hint" data-i18n="hint.3dNav"></div>
             </div>
-            <p class="hint cam-back-hint">Задник: кассета вставляется сверху между плитой задника и рамкой матового стекла — её скошенный край приподнимает рамку на пружинах. Упор сверху на рамке — чтобы приподнять её пальцем. Включите «кассета», чтобы увидеть её на месте.</p>
-            <h3 class="cam-h">Детали для печати</h3>
+            <p class="hint cam-back-hint" data-i18n="cam.backHint"></p>
+            <h3 class="cam-h" data-i18n="cam.partsH"></h3>
             <div class="table-wrap"><table class="data" id="cam-parts"></table></div>
-            <h3 class="cam-h">Покупные детали</h3>
+            <h3 class="cam-h" data-i18n="cam.hwH"></h3>
             <div class="table-wrap"><table class="data" id="cam-bom"></table></div>
           </div>
         </div>
@@ -151,6 +152,12 @@
   <div id="print-area" aria-hidden="true"></div>
 
 
+  <script src="js/i18n.js"></script>
+  <script src="js/lang/en.js"></script>
+  <script src="js/lang/pl.js"></script>
+  <script src="js/lang/be.js"></script>
+  <script src="js/lang/uk.js"></script>
+  <script src="js/lang/ru.js"></script>
   <script src="js/geometry.js"></script>
   <script src="js/exporters.js"></script>
   <script src="js/viewer3d.js"></script>

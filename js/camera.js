@@ -8,10 +8,11 @@
  * от объектива к кассете. Верх рельса — y = 0, передняя плоскость передней рамки — z = 0.
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./csg.js'), require('./geometry.js'));
-  else root.BellowsCamera = factory(root.BellowsCSG, root.BellowsGeometry);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (K3, Geo) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./csg.js'), require('./geometry.js'), require('./i18n.js'));
+  else root.BellowsCamera = factory(root.BellowsCSG, root.BellowsGeometry, root.BellowsI18n);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (K3, Geo, I18n) {
   'use strict';
+  const tr = I18n.t, num = I18n.num;
   const { CSG, M } = K3;
 
   // ---------------------------------------------------------------------
@@ -27,18 +28,18 @@
     graflex: { name: 'Graflex (Crown/Speed) — 102×102', w: 102, h: 102 },
     toyo: { name: 'Toyo — 110×110', w: 110, h: 110 },
     sinar: { name: 'Sinar — 140×140', w: 140, h: 140 },
-    custom: { name: 'свой размер', w: 0, h: 0 },
+    custom: { get name() { return tr('opt.board.custom'); }, w: 0, h: 0 },
   };
   const SHUTTERS = {
-    copal0: { name: 'Copal 0 — Ø34,6', d: 34.6 },
-    copal1: { name: 'Copal 1 — Ø41,6', d: 41.6 },
+    copal0: { get name() { return `Copal 0 — Ø${num(34.6)}`; }, d: 34.6 },
+    copal1: { get name() { return `Copal 1 — Ø${num(41.6)}`; }, d: 41.6 },
     copal3: { name: 'Copal 3 — Ø65', d: 65 },
-    custom: { name: 'свой диаметр', d: 0 },
+    custom: { get name() { return tr('opt.shutter.custom'); }, d: 0 },
   };
   const RAILS = {
     '2020': { name: '2020 (20×20)', w: 20, h: 20 },
-    '2040': { name: '2040 стоя (20 шир. × 40 выс.)', w: 20, h: 40 },
-    '4020': { name: '2040 плашмя (40 шир. × 20 выс.)', w: 40, h: 20 },
+    '2040': { get name() { return tr('opt.rail.2040'); }, w: 20, h: 40 },
+    '4020': { get name() { return tr('opt.rail.4020'); }, w: 40, h: 20 },
     '4040': { name: '4040 (40×40)', w: 40, h: 40 },
   };
   const TRIPOD = {
@@ -52,8 +53,8 @@
   const FW = { M5: 1, M3: 0.5 }; // толщина шайб DIN 125
 
   const STYLES = {
-    monorail: { name: 'монорельсовая (студийная)' },
-    field: { name: 'складная полевая (коробка + откидная станина)' },
+    monorail: { get name() { return tr('opt.style.monorail'); } },
+    field: { get name() { return tr('opt.style.field'); } },
   };
 
   const CAM_DEFAULTS = {
@@ -313,7 +314,7 @@
   function computeCamera(bm, input) {
     const cp = normalizeCamParams(input);
     const errors = [], warnings = [];
-    if (!bm || !bm.ok) return { ok: false, params: cp, errors: ['Сначала исправьте параметры меха.'], warnings };
+    if (!bm || !bm.ok) return { ok: false, params: cp, errors: [tr('cam.err.bellows')], warnings };
     const c = cp.camClearance;
     const F = FORMATS[cp.camFormat];
     const film = F.film;
@@ -326,8 +327,8 @@
     const d = bm.derived, bp = bm.params;
     const tMat = bp.tOuter + bp.tLining;
 
-    if (!(board.w > 20 && board.h > 20)) errors.push('Укажите размер объективной платы.');
-    if (!(shutterD > 5)) errors.push('Укажите диаметр затвора.');
+    if (!(board.w > 20 && board.h > 20)) errors.push(tr('cam.err.board'));
+    if (!(shutterD > 5)) errors.push(tr('cam.err.shutter'));
     if (errors.length) return { ok: false, params: cp, errors, warnings };
 
     const boardOpen = [board.w - 2 * K.boardLip, board.h - 2 * K.boardLip];
@@ -362,22 +363,22 @@
     const railNeed = Math.ceil((zR(eMax) + K.Tf / 2 + K.Lc / 2 + 30 - railZ0) / 50) * 50;
     const railL = cp.camRailLength > 0 ? cp.camRailLength : railNeed;
     if (cp.camStyle === 'monorail' && cp.camRailLength > 0 && cp.camRailLength < railNeed) {
-      warnings.push(`Рельс ${cp.camRailLength} мм короче нужного (${railNeed} мм): полное растяжение меха будет недоступно.`);
+      warnings.push(tr('cam.warn.rail', { len: cp.camRailLength, need: railNeed }));
     }
 
     // Проверки
     const minClearR = Math.min(d.clearRear.w, d.clearRear.h);
     if (minClearR < Math.max(film[0], film[1])) {
-      warnings.push(`Просвет меха у кассеты (${minClearR.toFixed(0)} мм) меньше длинной стороны кадра (${film[1]} мм): при повороте задника мех срежет углы кадра. Увеличьте заднюю рамку меха.`);
+      warnings.push(tr('cam.warn.rearClear', { clear: minClearR.toFixed(0), film: film[1] }));
     }
     if (shutterD + 6 > Math.min(boardOpen[0], boardOpen[1]) - 2 * c) {
-      warnings.push(`Затвор Ø${shutterD} почти не помещается на плату ${board.w}×${board.h}: отверстие шире светового замка платы.`);
+      warnings.push(tr('cam.warn.shutterBoard', { d: num(shutterD), w: board.w, h: board.h }));
     }
     if (d.clearFront.w < shutterD || d.clearFront.h < shutterD) {
-      warnings.push('Передний просвет меха меньше диаметра затвора — задняя линза объектива может упереться в мех.');
+      warnings.push(tr('cam.warn.frontClear'));
     }
     if (cp.camFilmDepth <= 0) {
-      warnings.push(`Глубина плоскости плёнки взята по справочнику (${String(depth).replace('.', ',')} мм для ${F.name}). Измерьте свои кассеты — от этого зависит резкость.`);
+      warnings.push(tr('cam.warn.depth', { depth: num(depth), format: F.name }));
     }
 
     // глухое отверстие оси наклона в боковине рамки: как можно глубже, но не ближе 1,5 мм к окну
@@ -398,8 +399,8 @@
     const cam = { ok: true, params: cp, errors, warnings, dims, parts, zR, zF };
     // длины крепежа — из геометрии сборки (от растяжения не зависят)
     cam.fasteners = fastenerLayout(cam, dims.eMin, false, {});
-    const bad = [...new Set(cam.fasteners.filter((x) => !x.len).map((x) => FX_LABEL[x.key]))];
-    for (const b of bad) warnings.push(`Не удаётся подобрать стандартную длину винта: ${b}. Проверьте размеры.`);
+    const bad = [...new Set(cam.fasteners.filter((x) => !x.len).map((x) => fxLabel(x.key)))];
+    for (const b of bad) warnings.push(tr('cam.warn.noLen', { what: b }));
     cam.spring = springCalc(dims);
     cam.hardware = hardwareList(dims, cp, bm, cam);
     return cam;
@@ -434,9 +435,9 @@
     const eMaxGeom = Math.floor(zRW - 2 * K.tPlate - K.Tf - zFmin);
     const eMax = Math.min(bp.maxExt, eMaxGeom);
     if (bp.maxExt > eMaxGeom + 1) {
-      warnings.push(`Станина складной камеры позволяет растянуть мех только до ${eMaxGeom} мм (у меха задано ${bp.maxExt}). Уменьшите растяжение меха до ${eMaxGeom} мм — мех станет короче и компактнее.`);
+      warnings.push(tr('cam.warn.bedLimit', { max: eMaxGeom, set: bp.maxExt }));
     }
-    if (eMax < 120) warnings.push(`Растяжение складной камеры всего ${Math.round(eMax)} мм — подойдут только короткофокусные объективы.`);
+    if (eMax < 120) warnings.push(tr('cam.warn.shortExt', { ext: Math.round(eMax) }));
     const HuF = Math.ceil(A - sledTop + rise + 14);
     return {
       W, Htop, floorT: FK.floorT, depth, zRW, Lbed, A, sledTop, rx, uxFace, eMin, eMax, eMaxGeom, HuF, zF,
@@ -463,7 +464,7 @@
     };
 
     // --- Каретка: седло на рельс, фиксатор сбоку, ось поворота стойки сверху
-    add('carriage', 'Каретка', 2, COL.carriage, () => {
+    add('carriage', tr('part.carriage'), 2, COL.carriage, () => {
       const hw = D.rail.w / 2 + c, W = hw + K.Tw;
       const prof = rrect(-W, -D.wrap, W, K.Tc, [[3, 5], [1.5, 1], [1.5, 1], [3, 5]]);
       let s = chamferPrism(prof, -K.Lc / 2, K.Lc / 2, 1, 1);
@@ -476,7 +477,7 @@
         cylY(-1, K.Tc + 1, 0, 0, HW.M5.hole),
         hexY(-1, nutH, 0, 0, nutAF),
       ]);
-    }, face.yDown, 'печатать верхом вниз');
+    }, face.yDown, tr('part.note.topDown'));
 
     // --- Основание стойки: скруглённая плита, паз оси поворота/сдвига
     const base = (S, shift) => () => {
@@ -486,8 +487,8 @@
       for (const sx of [-1, 1]) for (const sz of [-K.footZ, K.footZ]) cuts.push(cylY(-1, K.Tb + 1, sx * (S / 2 + K.washer + K.Tu / 2), sz, HW.M5.hole));
       return s.subtractAll(cuts);
     };
-    add('base_front', 'Основание передней стойки', 1, COL.struct, base(D.Sf, cp.camShift), face.yUp);
-    add('base_rear', 'Основание задней стойки', 1, COL.struct, base(D.Sr, cp.camShift), face.yUp);
+    add('base_front', tr('part.base_front'), 1, COL.struct, base(D.Sf, cp.camShift), face.yUp);
+    add('base_rear', tr('part.base_rear'), 1, COL.struct, base(D.Sr, cp.camShift), face.yUp);
 
     // --- Вертикали: сужаются кверху, верх скруглён, фаски по контуру
     const upright = (H, axleY, slotLen) => () => {
@@ -508,10 +509,10 @@
     const upF = upright(D.HuF, D.A - D.baseTop, 2 * D.rise);
     const upR = upright(D.HuR, D.A - D.baseTop, 0);
     const mirror = M.S(-1, 1, 1);
-    add('upright_front_R', 'Вертикаль передней стойки, правая', 1, COL.struct, upF, face.xUp);
-    add('upright_front_L', 'Вертикаль передней стойки, левая', 1, COL.struct, () => upF().transform(mirror), M.Ry(90));
-    add('upright_rear_R', 'Вертикаль задней стойки, правая', 1, COL.struct, upR, face.xUp);
-    add('upright_rear_L', 'Вертикаль задней стойки, левая', 1, COL.struct, () => upR().transform(mirror), M.Ry(90));
+    add('upright_front_R', tr('part.upright_front_R'), 1, COL.struct, upF, face.xUp);
+    add('upright_front_L', tr('part.upright_front_L'), 1, COL.struct, () => upF().transform(mirror), M.Ry(90));
+    add('upright_rear_R', tr('part.upright_rear_R'), 1, COL.struct, upR, face.xUp);
+    add('upright_rear_L', tr('part.upright_rear_L'), 1, COL.struct, () => upR().transform(mirror), M.Ry(90));
 
     // --- Общая часть рамок: скруглённый контур с фасками, окно, оси наклона.
     // Гнёзда гаек открыты на ту сторону, которую закрывает рамка меха, — снаружи их не видно.
@@ -530,7 +531,7 @@
     const cornerHoles = (S) => [[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([sx, sy]) => [sx * (S / 2 - K.corner), sy * (S / 2 - K.corner)]);
 
     // --- Передняя рамка (под объективную плату): лицевая сторона чистая
-    add('frame_front', 'Передняя рамка (под плату)', 1, COL.frame, () => {
+    add('frame_front', tr('part.frame_front'), 1, COL.frame, () => {
       const { s, cuts } = frameBase(D.Sf, D.boardOpen[0], D.boardOpen[1], true, D.hdF);
       const bw = D.board.w / 2 + c, bh = D.board.h / 2 + c;
       cuts.push(box(-bw, -bh, -1, bw, bh, K.tBoard));
@@ -539,11 +540,11 @@
         cuts.push(cylZ(-1, K.Tf + 1, x, y, HW.M3.hole), cylZ(-1, HW.M3.cbH, x, y, HW.M3.cbD));
       }
       return s.subtractAll(cuts);
-    }, face.down, 'печатать лицевой стороной вверх');
+    }, face.down, tr('part.note.faceUp'));
 
     // --- Задняя рамка (к ней крепится поворотный задник)
     const pinwheel = (S) => { const a = S / 4, b = S / 2 - 7; return [[a, b], [-b, a], [-a, -b], [b, -a]]; };
-    add('frame_rear', 'Задняя рамка', 1, COL.frame, () => {
+    add('frame_rear', tr('part.frame_rear'), 1, COL.frame, () => {
       const { s, cuts } = frameBase(D.Sr, D.Or, D.Or, false, D.hdR);
       for (const [x, y] of cornerHoles(D.Sr)) {
         cuts.push(cylZ(-1, K.Tf + 1, x, y, HW.M3.hole), cylZ(K.Tf - HW.M3.cbH, K.Tf + 1, x, y, HW.M3.cbD));
@@ -561,11 +562,11 @@
       for (const [x, y] of cornerHoles(S)) cuts.push(cylZ(-1, K.tPlate + 1, x, y, HW.M3.selfTap));
       return s.subtractAll(cuts);
     };
-    add('bellows_frame_front', 'Рамка меха передняя', 1, COL.plate, bellowsFrame(D.Sf, D.bfF), face.up);
-    add('bellows_frame_rear', 'Рамка меха задняя', 1, COL.plate, bellowsFrame(D.Sr, D.bfR), face.up);
+    add('bellows_frame_front', tr('part.bellows_frame_front'), 1, COL.plate, bellowsFrame(D.Sf, D.bfF), face.up);
+    add('bellows_frame_rear', tr('part.bellows_frame_rear'), 1, COL.plate, bellowsFrame(D.Sr, D.bfR), face.up);
 
     // --- Объективная плата: скруглённые углы, фаски по лицу и отверстию
-    add('lens_board', `Объективная плата ${D.board.w}×${D.board.h}, затвор Ø${D.shutterD}`, 1, COL.board, () => {
+    add('lens_board', tr('part.lens_board', { w: D.board.w, h: D.board.h, d: num(D.shutterD) }), 1, COL.board, () => {
       let s = chamferPrism(rrect(-D.board.w / 2, -D.board.h / 2, D.board.w / 2, D.board.h / 2, 2.5), 0, K.tBoard, 0.8, 0);
       const pw = D.boardOpen[0] / 2 - c, ph = D.boardOpen[1] / 2 - c;
       s = s.union(box(-pw, -ph, K.tBoard - 0.5, pw, ph, K.tBoard + K.plugH));
@@ -576,14 +577,14 @@
     }, face.up);
 
     // --- Защёлки платы
-    add('latch', 'Поворотная защёлка платы', 2, COL.accent, () => {
+    add('latch', tr('part.latch'), 2, COL.accent, () => {
       const t = 2.5;
       const s = chamferPrism(rrect(-4, -4, 18, 4, 4, 8), 0, t, 0, 0.5);
       return s.subtractAll([cylZ(-1, t + 1, 0, 0, HW.M3.hole), csink(t, 0, 0, HW.M3.hole, 0.6, -1)]);
     }, face.up);
 
     // --- Задник: плита с направляющими (фаска-заход для кассеты), канавка светового замка
-    add('back_plate', 'Плита задника (поворотная)', 1, COL.back, () => {
+    add('back_plate', tr('part.back_plate'), 1, COL.back, () => {
       const S = D.Sr, T = K.backT;
       let s = chamferPrism(rrect(-S / 2, -S / 2, S / 2, S / 2, K.R, 10), 0, T, K.ch, 0.8);
       for (const sx of [-1, 1]) {
@@ -603,12 +604,12 @@
       for (const [x, y] of pinwheel(S)) cuts.push(cylZ(-1, T + D.guideH + 1, x, y, HW.M3.hole), cylZ(T - HW.M3.cbH, T + D.guideH + 1, x, y, HW.M3.cbD));
       for (const sx of [-1, 1]) for (const sy of [-1, 1]) cuts.push(cylZ(1, T + D.guideH + 1, sx * D.guideC, sy * (S / 2 - 15), HW.M3.selfTap));
       return s.subtractAll(cuts);
-    }, face.up, 'опорная плоскость — вверху; слой 0,1 мм');
+    }, face.up, tr('part.note.refUp'));
 
     // --- Рамка матового стекла
     const Wg = D.holderW - 1, Hg = D.Sr - 10;
     const barHoles = [1, 0, -1].map((sy) => sy * (Hg / 2 - 20));
-    add('gg_frame', 'Рамка матового стекла', 1, COL.glass, () => {
+    add('gg_frame', tr('part.gg_frame'), 1, COL.glass, () => {
       const s = chamferPrism(rrect(-Wg / 2, -Hg / 2, Wg / 2, Hg / 2, 4), 0, D.Tg, 0.5, 0.8);
       const ow = (D.film[0] + 2) / 2, oh = (D.film[1] + 2) / 2;
       const pw = (D.glass[0] + 0.6) / 2, ph = (D.glass[1] + 0.6) / 2;
@@ -624,10 +625,10 @@
       // упор для пальца сверху — приподнять рамку, чтобы посмотреть на кассету или вынуть её
       const grip = chamferPrism(rrect(-18, Hg / 2 - 10, 18, Hg / 2 - 4, 3), D.Tg - 0.5, D.Tg + 3, 0, 0.6);
       return s.union(grip).subtractAll(cuts);
-    }, face.up, 'лицевой стороной вниз; слой 0,1 мм');
+    }, face.up, tr('part.note.faceDown'));
 
     // --- Пружинные планки
-    add('spring_bar', 'Пружинная планка задника', 2, COL.frame, () => {
+    add('spring_bar', tr('part.spring_bar'), 2, COL.frame, () => {
       const x0 = Wg / 2 - 7, x1 = D.guideC + 7;
       const s = chamferPrism(rrect(x0, -Hg / 2, x1, Hg / 2, 3), 0, K.barT, 0.6, 0.6);
       const cuts = barHoles.map((y) => cylZ(-1, K.barT + 1, Wg / 2 - 3.5, y, HW.M3.hole));
@@ -651,15 +652,15 @@
       return s.subtractAll(cuts);
     };
     if (D.style === 'field') {
-      add('knob_small', 'Барашек: наклон, шарнир станины, фиксатор салазок', 5, COL.accent, knob(K.knobSD, K.knobSH, 18), face.up);
+      add('knob_small', tr('part.knob_small_field'), 5, COL.accent, knob(K.knobSD, K.knobSH, 18), face.up);
     } else {
-      add('knob', 'Барашек наклона (под болт M5)', 4, COL.accent, knob(K.knobD, K.knobH, 24), face.up);
-      add('knob_small', 'Малый барашек: поворот стойки, фиксатор каретки', 4, COL.accent, knob(K.knobSD, K.knobSH, 18), face.up);
+      add('knob', tr('part.knob'), 4, COL.accent, knob(K.knobD, K.knobH, 24), face.up);
+      add('knob_small', tr('part.knob_small'), 4, COL.accent, knob(K.knobSD, K.knobSH, 18), face.up);
     }
 
     // --- Штативная площадка
     const slotsX = D.rail.w >= 40 ? [-10, 10] : [0];
-    add('tripod_block', `Штативная площадка (гайка ${D.tri.name})`, 1, COL.carriage, () => {
+    add('tripod_block', tr('part.tripod_block', { thread: D.tri.name }), 1, COL.carriage, () => {
       const W = Math.max(D.rail.w, 30) + 10;
       const s = chamferPrism(rrect(-W / 2, -24, W / 2, 24, 5), -12, 0, 1, 0).transform(ALONG.y);
       // гайка опускается сверху до дна гнезда: под ней 2,5 мм — винт штатива (5–6 мм) достаёт до резьбы
@@ -669,7 +670,7 @@
     }, face.yUp);
 
     // --- Заглушки рельса
-    add('end_cap', 'Заглушка торца рельса', 2, COL.carriage, () => {
+    add('end_cap', tr('part.end_cap'), 2, COL.carriage, () => {
       // выступает за профиль сбоку и сверху: в неё упираются стенки и полка каретки
       const s = chamferPrism(rrect(-D.rail.w / 2 - K.capLip, -D.rail.h, D.rail.w / 2 + K.capLip, K.capLip + 1, 2, 4), 0, 4, 0, 0.8);
       const cuts = [];
@@ -705,7 +706,7 @@
     const cheekX0 = W / 2 - wall - FK.gap - FK.tc, cheekX1 = W / 2 - wall - FK.gap; // щёки станины (внутри боковин)
 
     // --- Корпус: коробка со скруглёнными рёбрами, задняя стенка под задник, рельсы на дне, проушины шарнира
-    add('body', 'Корпус (коробка)', 1, COL.frame, () => {
+    add('body', tr('part.body'), 1, COL.frame, () => {
       const y0 = -FK.floorT, y1 = f.Htop, Dz = f.depth;
       let s = chamferPrism(rrect(-W / 2, y0, W / 2, y1, [[5, 6], [K.R, 10], [K.R, 10], [5, 6]]), 0, Dz, K.ch, K.ch);
       s = s.subtract(box(-W / 2 + wall, 0, -1, W / 2 - wall, y1 - wall, f.zRW));
@@ -730,10 +731,10 @@
       // штативная гайка в дне (вставляется изнутри, тянется винтом штатива вниз — упирается в дно)
       cuts.push(cylY(-FK.floorT - 1, 1, 0, Dz / 2, D.tri.hole), hexY(-(D.tri.nutH + c), 1, 0, Dz / 2, D.tri.nutAF + c));
       return s.subtractAll(cuts);
-    }, M.Ry(180), 'задней стенкой на стол');
+    }, M.Ry(180), tr('part.note.backDown'));
 
     // --- Станина: откидывается вниз и становится направляющей; закрытая — крышка коробки
-    add('bed', 'Откидная станина (крышка)', 1, COL.struct, () => {
+    add('bed', tr('part.bed'), 1, COL.struct, () => {
       const L = f.Lbed, T = FK.bedT;
       let s = chamferPrism(rrect(-W / 2, 0, W / 2, L, [[0, 1], [K.R, 10], [K.R, 10], [0, 1]]), -T, 0, 0.6, 1).transform(ALONG.y);
       const adds = [];
@@ -754,10 +755,10 @@
         cuts.push(sx > 0 ? hexX(xi - 1, xi + h.nutH, 0, 0, h.nutAF) : hexX(xi - h.nutH, xi + 1, 0, 0, h.nutAF));
       }
       return s.subtractAll(cuts);
-    }, M.Rx(90), 'рельсами вверх');
+    }, M.Rx(90), tr('part.note.railsUp'));
 
     // --- Салазки передней стойки: пазы под рельсы, фиксатор сверху, крепление вертикалей снизу (головки утоплены)
-    add('sled', 'Салазки передней стойки', 1, COL.carriage, () => {
+    add('sled', tr('part.sled'), 1, COL.carriage, () => {
       const hx = f.uxFace, L = K.Du, yb = 0.3, yt = f.sledTop;
       const s = chamferPrism(rrect(-hx, -L / 2, hx, L / 2, 5), yb, yt, 0.6, 1).transform(ALONG.y);
       const cuts = [];
@@ -769,7 +770,7 @@
         cuts.push(cylY(yb - 1, yt + 1, sx * ux, sz, HW.M5.hole), cylY(yb - 1, yb + HW.M5.headH + 1.7, sx * ux, sz, 9.5));
       }
       return s.subtractAll(cuts);
-    }, M.Rx(-90), 'пазами вверх');
+    }, M.Rx(-90), tr('part.note.slotsUp'));
     return out;
   }
 
@@ -887,23 +888,9 @@
     return pick === 'min' ? ok[0] : ok[ok.length - 1];
   }
 
-  const FX_LABEL = {
-    tilt: 'оси наклона рамок, головка в барашке',
-    pivot: 'оси поворота стоек, в малых барашках, шайба под барашек',
-    lock: 'фиксаторы кареток, в малых барашках (упираются в рельс)',
-    feet: 'вертикали к основаниям, снизу, с шайбой',
-    hinge: 'шарнир станины, в малых барашках, шайба под барашек',
-    sledlock: 'фиксатор салазок, в малом барашке (упирается в рельс)',
-    sledup: 'вертикали к салазкам, снизу, головки в цековках',
-    bfF: 'передняя рамка меха, саморезом в пластик',
-    bfR: 'задняя рамка меха, саморезом в пластик',
-    back: 'плита задника, головки утоплены',
-    latch: 'защёлки платы, с шайбой',
-    bar: 'пружинные планки к рамке стекла, с шайбой',
-    spring: 'оси пружин задника',
-    tripod: 'штативная площадка, в Т-гайки M5 под паз 6 мм',
-    cap: 'заглушки рельса, нарезать M5 в канале профиля',
-  };
+  const FX_KEYS = ['tilt', 'pivot', 'lock', 'feet', 'hinge', 'sledlock', 'sledup', 'bfF', 'bfR', 'back', 'latch', 'bar', 'spring', 'tripod', 'cap'];
+  /** Где стоит группа крепежа — для спецификации и сообщений (на языке интерфейса). */
+  const fxLabel = (key) => tr('fx.' + key);
 
   /**
    * Весь крепёж сборки в положении (e, folded). Для каждого экземпляра: size, kind (hex — DIN 933,
@@ -1070,9 +1057,7 @@
   /** Сводная спецификация крепежа по группам: [{name, qty, note}]. */
   function fastenerBOM(fx) {
     const rows = new Map();
-    const name = (x) => (x.size === 'M5'
-      ? `${x.kind === 'hex' ? 'Болт' : 'Винт'} M5×${x.len} (DIN ${x.kind === 'hex' ? 933 : 912})`
-      : `Винт M3×${x.len} (DIN 912)`);
+    const name = (x) => tr(x.kind === 'hex' ? 'hw.bolt' : 'hw.screw', { size: x.size, len: x.len, din: x.kind === 'hex' ? 933 : 912 });
     for (const x of fx) {
       const n = name(x), r = rows.get(n) || { name: n, qty: 0, groups: new Map() };
       r.qty++;
@@ -1081,21 +1066,21 @@
     }
     const list = [...rows.values()].map((r) => ({
       name: r.name, qty: r.qty,
-      note: [...r.groups].map(([k, n]) => (r.groups.size > 1 ? `${FX_LABEL[k]} (${n})` : FX_LABEL[k])).join('; '),
+      note: [...r.groups].map(([k, n]) => (r.groups.size > 1 ? `${fxLabel(k)} (${n})` : fxLabel(k))).join('; '),
     }));
     const count = (pred) => fx.filter(pred).length;
     const nuts = count((x) => x.size === 'M5' && x.nut !== null);
     const w5 = count((x) => x.size === 'M5' && x.washer > 0) + fx.reduce((s, x) => s + x.stack, 0);
-    const WN = { tilt: 'между вертикалью и рамкой', pivot: 'под барашки поворота', feet: 'под головки болтов вертикалей', hinge: 'под барашки шарнира' };
+    const WN = (k) => tr('hw.w.' + k); // где стоят шайбы: tilt, pivot, feet, hinge
     const wg = {};
     for (const x of fx) if (x.size === 'M5') wg[x.key] = (wg[x.key] || 0) + (x.washer > 0 ? 1 : 0) + x.stack;
-    const wNote = Object.keys(wg).filter((k) => wg[k]).map((k) => `${WN[k]} (${wg[k]})`).join('; ');
+    const wNote = Object.keys(wg).filter((k) => wg[k]).map((k) => `${WN(k)} (${wg[k]})`).join('; ');
     const w3 = count((x) => x.size === 'M3' && x.washer > 0);
-    if (nuts) list.push({ name: 'Гайка M5 (DIN 934)', qty: nuts, note: 'вставляются в гнёзда деталей' });
-    if (w5) list.push({ name: 'Шайба M5 (DIN 125)', qty: w5, note: wNote });
-    if (w3) list.push({ name: 'Шайба M3 (DIN 125)', qty: w3, note: 'под винты защёлок и пружинных планок' });
+    if (nuts) list.push({ name: tr('hw.nut'), qty: nuts, note: tr('hw.nutNote') });
+    if (w5) list.push({ name: tr('hw.washer', { size: 'M5' }), qty: w5, note: wNote });
+    if (w3) list.push({ name: tr('hw.washer', { size: 'M3' }), qty: w3, note: tr('hw.washerM3Note') });
     const tn = count((x) => x.key === 'tripod');
-    if (tn) list.push({ name: 'Т-гайка M5 под паз 6 мм (серия 20)', qty: tn, note: 'штативная площадка' });
+    if (tn) list.push({ name: tr('hw.tnut'), qty: tn, note: tr('hw.tnutNote') });
     return list;
   }
 
@@ -1359,164 +1344,140 @@
     const tri = D.tri, sp = cam.spring;
     const list = fastenerBOM(cam.fasteners);
     const extra = [
-      { name: `Пружина сжатия, внутр. Ø ≥ 3,5, нар. Ø ≤ 7, длина ≈ ${sp.free} мм`, qty: 4,
-        note: `на оси пружин: без кассеты сжата до ${Math.round(sp.open)} мм, с кассетой — до ${Math.round(sp.closed)} мм (витки не должны сомкнуться)` },
-      { name: `Гайка ${tri.name} (штативная)`, qty: 1, note: D.style === 'field' ? 'в гнездо на дне коробки, изнутри' : 'в штативную площадку, сверху' },
-      { name: `Матовое стекло ${D.glass[0]}×${D.glass[1]}×${cp.camGlassT} мм`, qty: 1, note: 'матовой стороной к объективу' },
-      { name: `Объектив в затворе ${cp.camShutter === 'custom' ? `Ø${D.shutterD}` : SHUTTERS[cp.camShutter].name}`, qty: 1, note: '' },
-      { name: `Кассеты ${FORMATS[cp.camFormat].name}`, qty: 1, note: `ширина ${D.holderW} мм, толщина ${String(D.holderT).replace('.', ',')} мм` },
-      { name: 'Материал меха (наружный + подкладка)', qty: 1, note: `≈ ${(bm.derived.fabricArea / 1e6).toFixed(2).replace('.', ',')} м² каждого` },
+      { name: tr('hw.spring', { free: sp.free, id: num(3.5) }), qty: 4,
+        note: tr('hw.springNote', { open: Math.round(sp.open), closed: Math.round(sp.closed) }) },
+      { name: tr('hw.tripodNut', { thread: tri.name }), qty: 1, note: tr(D.style === 'field' ? 'hw.tripodNutField' : 'hw.tripodNutMono') },
+      { name: tr('hw.glass', { w: D.glass[0], h: D.glass[1], t: num(cp.camGlassT) }), qty: 1, note: tr('hw.glassNote') },
+      { name: tr('hw.lens', { shutter: cp.camShutter === 'custom' ? `Ø${num(D.shutterD)}` : SHUTTERS[cp.camShutter].name }), qty: 1, note: '' },
+      { name: tr('hw.holders', { format: FORMATS[cp.camFormat].name }), qty: 1, note: tr('hw.holdersNote', { w: num(D.holderW), t: num(D.holderT) }) },
+      { name: tr('hw.fabric'), qty: 1, note: tr('hw.fabricNote', { area: num(bm.derived.fabricArea / 1e6, 2) }) },
     ];
-    if (D.style !== 'field') extra.unshift({ name: `Алюминиевый профиль ${D.rail.name}, паз 6 мм (серия 20)`, qty: 1, note: `длина ${D.railL} мм` });
+    if (D.style !== 'field') extra.unshift({ name: tr('hw.profile', { rail: D.rail.name }), qty: 1, note: tr('hw.profileNote', { len: D.railL }) });
     return list.concat(extra);
   }
 
-  function splitNote(L, split) {
-    if (!split || !split.length) return;
-    L.push('   СОСТАВНЫЕ ДЕТАЛИ. Не поместившиеся на стол детали разрезаны на части (номер части — в имени файла):');
-    for (const x of split) L.push(`     ${x.name} — ${x.n} ч.`);
-    L.push('   Части соединяются «ласточкиными хвостами», тонкие стенки — внахлёст «в полдерева»; зазор заложен.');
-    L.push('   Клей: PLA — цианоакрилат или эпоксидка, PETG — эпоксидка или дихлорметан. Склеивайте на ровном стекле;');
-    L.push('   опорные плоскости после склейки проверьте линейкой.');
+  // ---------------------------------------------------------------------
+  // Инструкция (README.txt в архиве): абзацы из словаря, перенос по ширине 110 знаков
+  // ---------------------------------------------------------------------
+  function textDoc() {
+    const L = [];
+    return {
+      L,
+      head: (s) => L.push(s), // заголовок без отступа
+      text: (s) => L.push(...I18n.wrap(s, 110, '')), // вводный абзац без отступа
+      para: (s) => L.push(...I18n.wrap(s, 110, '   ')),
+      blank: () => L.push(''),
+      item: (s) => L.push('   ' + s),
+    };
   }
 
   /** Обозначение крепежа группы для текста: «M5×25». */
   const fxName = (cam, key) => { const x = cam.fasteners.find((q) => q.key === key); return x ? `${x.size}×${x.len || '?'}` : ''; };
 
-  function backAssemblyLines(cam, L) {
-    const sp = cam.spring, n = (k) => fxName(cam, k);
-    L.push('   Задник: матовое стекло вложить в рамку матовой стороной к объективу, закрепить каплями силикона.');
-    L.push(`   Рамку положить на плиту между направляющими, сверху пружинные планки (6× ${n('bar')} с шайбами),`);
-    L.push(`   через планки — 4 оси ${n('spring')} с пружинами в направляющие плиты. Оси вворачивать, пока между головкой`);
-    L.push(`   и планкой не останется ≈ ${Math.round(sp.open)} мм: пружина поджата, а вставленная кассета (+${String(cam.dims.holderT).replace('.', ',')} мм) не сожмёт её до упора.`);
-    L.push('   Кассета вставляется между плитой и рамкой стекла, приподнимая её (заход-фаска на торцах рамки).');
+  function splitNote(doc, split) {
+    if (!split || !split.length) return;
+    doc.para(tr('rd.split.head'));
+    for (const x of split) doc.item('  ' + tr('rd.split.item', { name: x.name, n: x.n }));
+    doc.para(tr('rd.split.joint'));
+  }
+
+  function backAssembly(cam, doc) {
+    const n = (k) => fxName(cam, k);
+    doc.para(tr('rd.back.glass'));
+    doc.para(tr('rd.back.springs', { bar: n('bar'), spring: n('spring'), open: Math.round(cam.spring.open), holder: num(cam.dims.holderT) }));
+    doc.para(tr('rd.back.holder'));
+  }
+
+  function listsAndBellows(cam, doc, k) {
+    doc.head(`${k}. ${tr('rd.h.parts')}`);
+    for (const part of cam.parts) doc.item(`${part.qty} × ${part.name}${part.note ? ` (${part.note})` : ''}`);
+    doc.blank();
+    doc.head(`${k + 1}. ${tr('rd.h.hw')}`);
+    for (const h of cam.hardware) doc.item(`${h.qty} × ${h.name}${h.note ? ` — ${h.note}` : ''}`);
+    doc.blank();
+    doc.head(`${k + 2}. ${tr('rd.h.bellows')}`);
+    doc.para(tr('rd.bellowsFolder'));
+    doc.blank();
   }
 
   function fieldAssemblyText(cam, bm, split) {
     const D = cam.dims, f = D.fb, p = cam.params, F = FORMATS[p.camFormat];
-    const n = (k) => fxName(cam, k);
-    const r = (x) => Math.round(x);
-    const L = [];
-    L.push(`СКЛАДНАЯ ПОЛЕВАЯ КАМЕРА ${F.name} — КОМПЛЕКТ ДЛЯ 3D-ПЕЧАТИ`);
-    L.push('');
-    L.push(`Коробка ${f.W}×${r(f.Htop + f.floorT)}×${f.depth} мм, в сложенном виде ≈ ${r(f.closed.w)}×${r(f.closed.h)}×${r(f.closed.d)} мм.`);
-    L.push(`Плата объектива ${D.board.w}×${D.board.h} мм, затвор Ø${D.shutterD} мм. Растяжение меха ${r(f.eMin)}…${r(f.eMax)} мм.`);
-    L.push(`Объектив при складывании должен выступать вперёд от платы не больше чем на ${f.lensFold} мм.`);
-    L.push(`Подвижки: подъём/опускание передней рамки ±${p.camFieldRise} мм и наклон. Задник неподвижный, поворачивается на 90° (4 винта).`);
-    L.push('');
-    L.push('ВНИМАНИЕ. Размеры кассет и глубина плоскости плёнки — справочные; измерьте свои кассеты.');
-    L.push('');
-    L.push('1. ПЕЧАТЬ');
-    L.push('   PETG (лучше) или PLA, 4 периметра, заполнение 30–40 %. Коробку — задней стенкой на стол (опорная плоскость');
-    L.push('   задника получается ровной), станину — рельсами вверх, салазки — пазами вверх. Поддержки не нужны.');
-    L.push('   Плиту задника и рамку матового стекла — слоем 0,1 мм. Внутренние детали — чёрным пластиком.');
-    splitNote(L, split);
-    L.push('');
-    L.push('2. СБОРКА');
-    L.push('   В барашки вклеить (или вдавить) головки болтов (DIN 933): оси наклона — 2×' + ` ${n('tilt')}, шарнир — 2× ${n('hinge')},`);
-    L.push(`   фиксатор салазок — 1× ${n('sledlock')}.`);
-    L.push('   Коробка: штативную гайку вдавить изнутри в гнездо на дне. Мех: манжеты вклеить на бортики рамок меха.');
-    L.push(`   Заднюю рамку меха привернуть к задней стенке изнутри: винты ${n('bfR')} вставляются снаружи, со стороны задника.`);
-    L.push(`   Затем плиту задника — 4 винтами ${n('back')} (головки утоплены).`);
-    L.push('   Станина: гайки M5 вдавить в гнёзда на внутренних сторонах щёк. Щёки заводятся внутрь коробки у дна,');
-    L.push(`   барашки ${n('hinge')} с шайбами — снаружи через проушины. Затянули — станина держится открытой или закрытой.`);
-    L.push(`   Салазки: гайку M5 вдавить в гнездо над правым пазом; барашек ${n('sledlock')} сверху — фиксатор фокусировки.`);
-    L.push(`   Вертикали: гайки M5 в гнёзда ножек (открыты внутрь), привернуть к салазкам снизу винтами ${n('sledup')} (DIN 912).`);
-    L.push(`   Рамка: гайки M5 в пазы со стороны меха, поставить между вертикалями с шайбами, барашки ${n('tilt')} снаружи.`);
-    L.push(`   Переднюю рамку меха привернуть к рамке винтами ${n('bfF')} спереди. Плата — в гнездо рамки, 2 защёлки ${n('latch')}.`);
-    L.push('   Салазки со стойкой надвигаются на рельсы с дальнего конца открытой станины и задвигаются в коробку.');
-    backAssemblyLines(cam, L);
-    L.push('');
-    L.push('3. РАБОТА И СКЛАДЫВАНИЕ');
-    L.push('   Открыть: ослабить барашки шарнира, опустить станину до упора (она ложится вровень с дном), затянуть.');
-    L.push('   Вывести стойку на станину, сфокусироваться, затянуть фиксатор салазок.');
-    L.push('   Сложить: вернуть рамку в ноль (без подъёма и наклона), задвинуть стойку до упора внутрь коробки,');
-    L.push('   поднять станину — она закрывает коробку. Затянуть барашки шарнира.');
-    L.push('');
-    L.push('4. ЮСТИРОВКА — как у любой камеры: фокус по матовому стеклу, тестовый кадр, при необходимости прокладки');
-    L.push('   под уступ стекла. Проверьте светонепроницаемость фонариком в тёмной комнате.');
-    L.push('');
-    L.push('5. ДЕТАЛИ ДЛЯ ПЕЧАТИ');
-    for (const part of cam.parts) L.push(`   ${part.qty} × ${part.name}${part.note ? ` (${part.note})` : ''}`);
-    L.push('');
-    L.push('6. ПОКУПНОЕ');
-    for (const h of cam.hardware) L.push(`   ${h.qty} × ${h.name}${h.note ? ` — ${h.note}` : ''}`);
-    L.push('');
-    L.push('7. МЕХ — папка bellows: развёртка 1:1 (SVG, DXF), чертёж меха, STL плашек с картами раскладки.');
-    L.push('');
-    return L.join('\n');
+    const n = (k) => fxName(cam, k), r = (x) => Math.round(x);
+    const doc = textDoc();
+    doc.head(tr('rd.f.title', { format: F.name }));
+    doc.blank();
+    doc.text(tr('rd.f.box', { w: f.W, h: r(f.Htop + f.floorT), d: f.depth, cw: r(f.closed.w), ch: r(f.closed.h), cd: r(f.closed.d) }));
+    doc.text(tr('rd.board', { w: D.board.w, h: D.board.h, d: num(D.shutterD) }) + ' ' + tr('rd.f.ext', { min: r(f.eMin), max: r(f.eMax) }));
+    doc.text(tr('rd.f.lens', { fold: f.lensFold }));
+    doc.text(tr('rd.f.moves', { rise: p.camFieldRise }));
+    doc.blank();
+    doc.text(tr('rd.f.attention'));
+    doc.blank();
+    doc.head(`1. ${tr('rd.h.print')}`);
+    doc.para(tr('rd.f.print1'));
+    doc.para(tr('rd.f.print2'));
+    splitNote(doc, split);
+    doc.blank();
+    doc.head(`2. ${tr('rd.h.assembly')}`);
+    doc.para(tr('rd.f.knobs', { tilt: n('tilt'), hinge: n('hinge'), sledlock: n('sledlock') }));
+    doc.para(tr('rd.f.box2'));
+    doc.para(tr('rd.f.rear', { bfR: n('bfR'), back: n('back') }));
+    doc.para(tr('rd.f.bed', { hinge: n('hinge') }));
+    doc.para(tr('rd.f.sled', { sledlock: n('sledlock') }));
+    doc.para(tr('rd.f.uprights', { sledup: n('sledup') }));
+    doc.para(tr('rd.f.frame', { tilt: n('tilt') }));
+    doc.para(tr('rd.f.front', { bfF: n('bfF'), latch: n('latch') }));
+    doc.para(tr('rd.f.slide'));
+    backAssembly(cam, doc);
+    doc.blank();
+    doc.head(`3. ${tr('rd.h.operate')}`);
+    doc.para(tr('rd.f.open'));
+    doc.para(tr('rd.f.close'));
+    doc.blank();
+    doc.head(`4. ${tr('rd.h.adjust')}`);
+    doc.para(tr('rd.f.adjust'));
+    doc.blank();
+    listsAndBellows(cam, doc, 5);
+    return doc.L.join('\n');
   }
 
   /** Текст README для архива: печать, сборка, юстировка, списки деталей. */
   function assemblyText(cam, bm, split) {
     if (cam.dims.style === 'field') return fieldAssemblyText(cam, bm, split);
-    const D = cam.dims, p = cam.params, F = FORMATS[p.camFormat];
-    const f = (x) => (Math.round(x * 10) / 10).toString().replace('.', ',');
+    const D = cam.dims, p = cam.params, F = FORMATS[p.camFormat], m = bm.derived.mid;
+    const f = (x) => num(Math.round(x * 10) / 10);
     const n = (k) => fxName(cam, k);
-    const nTri = cam.fasteners.filter((x) => x.key === 'tripod').length;
-    const L = [];
-    L.push(`МОНОРЕЛЬСОВАЯ КАМЕРА ${F.name} — КОМПЛЕКТ ДЛЯ 3D-ПЕЧАТИ`);
-    L.push('');
-    L.push(`Плата объектива ${D.board.w}×${D.board.h} мм, затвор Ø${D.shutterD} мм.`);
-    L.push(`Мех: рамки ${f(bm.derived.mid.fW)}×${f(bm.derived.mid.fH)} → ${f(bm.derived.mid.rW)}×${f(bm.derived.mid.rH)} мм, растяжение ${f(D.eMin)}…${f(D.eMax)} мм.`);
-    L.push(`Оптическая ось на высоте ${f(D.A)} мм над рельсом. Рельс ${D.rail.name}, ${D.railL} мм.`);
-    L.push(`Подвижки: передняя рамка — подъём/опускание ±${p.camRise} мм, сдвиг ±${p.camShift} мм, наклон, поворот;`);
-    L.push(`задняя — сдвиг ±${p.camShift} мм, наклон, поворот. Задник поворачивается на 90° (4 винта).`);
-    L.push('');
-    L.push('ВНИМАНИЕ. Размеры кассет и глубина плоскости плёнки взяты по справочным данным.');
-    L.push('До печати задника измерьте свою кассету и введите ширину и глубину в параметрах.');
-    L.push('');
-    L.push('1. ПЕЧАТЬ');
-    L.push('   Пластик — PETG (лучше) или PLA. 4 периметра, 4 слоя сверху и снизу, заполнение 30–40 %.');
-    L.push('   Слой 0,2 мм; плиту задника и рамку матового стекла — слоем 0,1 мм (от них зависит резкость).');
-    L.push('   Файлы уже развёрнуты для печати без поддержек. Число в имени файла после «x» — сколько штук печатать.');
-    L.push('   Отверстия M3 под саморез — 2,8 мм, сквозные M3 — 3,4 мм, M5 — 5,4 мм. Гнёзда гаек рассчитаны');
-    L.push(`   с зазором ${p.camClearance} мм: если гайка не входит, прогрейте её паяльником и вдавите.`);
-    L.push('   Для непрозрачности внутренние детали (рамки, задник) печатайте чёрным пластиком.');
-    L.push('');
-    L.push('2. СБОРКА');
-    L.push('   Каретки: гайки M5 вдавить в гнездо снизу верхней полки (ось поворота) и в гнездо на внутренней стороне');
-    L.push('   боковой стенки (фиксатор; гнездо открыто к рельсу — упор винта прижимает гайку к стенке).');
-    L.push(`   В барашки вклеить (или вдавить) головки болтов (DIN 933): большие — 4× ${n('tilt')} (наклон),`);
-    L.push(`   малые — 2× ${n('pivot')} (поворот), 2× ${n('lock')} (фиксаторы).`);
-    L.push(`   Стойки: гайки M5 вставить сбоку в ножки вертикалей, привернуть вертикали к основаниям снизу болтами ${n('feet')} с шайбами.`);
-    L.push(`   Основание ставится на каретку, барашек ${n('pivot')} (под ним шайба) проходит через паз основания в гайку каретки:`);
-    L.push('   ослабили — стойка поворачивается и сдвигается вбок; затянули — зафиксирована.');
-    L.push('   Рамки: гайки M5 вставить в пазы боковин со стороны меха. Рамку поставить между вертикалями,');
-    L.push(`   шайбы между рамкой и вертикалью, барашки ${n('tilt')} снаружи. Ослабили — рамка наклоняется и (спереди) поднимается.`);
-    L.push(`   Мех: манжеты вклеить на бортики рамок меха (клей для кожи/ткани), рамки меха привернуть винтами ${n('bfF')}`);
-    L.push('   к стойкам: спереди — винты со стороны объектива, сзади — со стороны задника (до установки задника).');
-    L.push(`   Объективная плата: затвор в отверстие платы, плата в гнездо передней рамки, 2 защёлки на винтах ${n('latch')} с шайбами.`);
-    L.push(`   Плиту задника привернуть к задней рамке 4 винтами ${n('back')} (головки утоплены).`);
-    backAssemblyLines(cam, L);
-    L.push(`   Штативная площадка: штативную гайку опустить сверху до дна гнезда, площадку привернуть под рельс ${nTri} винтами`);
-    L.push(`   ${n('tripod')} в Т-гайки. Заглушки рельса (${n('cap')} в канал профиля) шире профиля — каретки в них упираются.`);
-    L.push('');
-    if (split && split.length) {
-      L.push('   СОСТАВНЫЕ ДЕТАЛИ. Не поместившиеся на стол детали разрезаны на части (номер части — в имени файла):');
-      for (const x of split) L.push(`     ${x.name} — ${x.n} ч.`);
-      L.push('   Части соединяются «ласточкиными хвостами» с зазором и клеем (для PLA — цианоакрилат или эпоксидная смола,');
-      L.push('   для PETG — эпоксидка или дихлорметан). Шип вставляется сверху. Склеивайте на ровном стекле, лицевой');
-      L.push('   стороной вниз, и прижмите до высыхания. Плиту задника и рамку матового стекла после склейки проверьте');
-      L.push('   линейкой на плоскость: опорная поверхность должна остаться ровной.');
-    }
-    L.push('');
-    L.push('3. ЮСТИРОВКА');
-    L.push('   Сфокусируйтесь по матовому стеклу на резкий объект (лупа), снимите тестовый кадр при открытой диафрагме.');
-    L.push('   Если плёнка нерезкая — плоскость стекла не совпадает с плоскостью плёнки: подложите тонкие прокладки');
-    L.push('   под уступ стекла (стекло дальше от объектива) или измените «глубину плоскости плёнки» и перепечатайте рамку стекла.');
-    L.push('   Проверьте светонепроницаемость: фонариком внутри камеры в тёмной комнате.');
-    L.push('');
-    L.push('4. ДЕТАЛИ ДЛЯ ПЕЧАТИ');
-    for (const part of cam.parts) L.push(`   ${part.qty} × ${part.name}${part.note ? ` (${part.note})` : ''}`);
-    L.push('');
-    L.push('5. ПОКУПНОЕ');
-    for (const h of cam.hardware) L.push(`   ${h.qty} × ${h.name}${h.note ? ` — ${h.note}` : ''}`);
-    L.push('');
-    L.push('6. МЕХ');
-    L.push('   Папка bellows: развёртка 1:1 (SVG, DXF), чертёж меха, STL плашек с картами раскладки на стол.');
-    L.push('');
-    return L.join('\n');
+    const doc = textDoc();
+    doc.head(tr('rd.m.title', { format: F.name }));
+    doc.blank();
+    doc.text(tr('rd.board', { w: D.board.w, h: D.board.h, d: num(D.shutterD) }));
+    doc.text(tr('rd.m.bellows', { fw: f(m.fW), fh: f(m.fH), rw: f(m.rW), rh: f(m.rH), min: f(D.eMin), max: f(D.eMax) }));
+    doc.text(tr('rd.m.axis', { a: f(D.A), rail: D.rail.name, len: D.railL }));
+    doc.text(tr('rd.m.moves', { rise: p.camRise, shift: p.camShift }));
+    doc.blank();
+    doc.text(tr('rd.m.attention'));
+    doc.blank();
+    doc.head(`1. ${tr('rd.h.print')}`);
+    doc.para(tr('rd.m.print1'));
+    doc.para(tr('rd.m.print2', { c: num(p.camClearance) }));
+    doc.para(tr('rd.m.print3'));
+    splitNote(doc, split);
+    doc.blank();
+    doc.head(`2. ${tr('rd.h.assembly')}`);
+    doc.para(tr('rd.m.carriage'));
+    doc.para(tr('rd.m.knobs', { tilt: n('tilt'), pivot: n('pivot'), lock: n('lock') }));
+    doc.para(tr('rd.m.stands', { feet: n('feet'), pivot: n('pivot') }));
+    doc.para(tr('rd.m.frames', { tilt: n('tilt') }));
+    doc.para(tr('rd.m.bellows2', { bfF: n('bfF') }));
+    doc.para(tr('rd.m.board', { latch: n('latch'), back: n('back') }));
+    backAssembly(cam, doc);
+    doc.para(tr('rd.m.tripod', { n: cam.fasteners.filter((x) => x.key === 'tripod').length, tripod: n('tripod'), cap: n('cap') }));
+    doc.blank();
+    doc.head(`3. ${tr('rd.h.adjust')}`);
+    doc.para(tr('rd.m.adjust'));
+    doc.blank();
+    listsAndBellows(cam, doc, 4);
+    return doc.L.join('\n');
   }
 
   return {
@@ -1524,6 +1485,6 @@
     normalizeCamParams, computeCamera, placements, printOriented, assemblyText, railCSG, bellowsOrigin, lensDummy, STYLES, FK,
     backRefZ, groundGlassDummy, holderDummy,
     splitForBed, layPiece, invRot, fitsBed, bedFitAngle, sectionSegments, DOVETAIL_L,
-    fastenerLayout, fastenerSolids, springCalc, FX_LABEL,
+    fastenerLayout, fastenerSolids, springCalc, fxLabel, FX_KEYS,
   };
 });

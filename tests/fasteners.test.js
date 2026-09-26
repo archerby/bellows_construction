@@ -42,7 +42,7 @@ for (const [title, bp, cp] of CASES) {
       const objs = scene(cam, e, folded);
       const fx = C.fastenerLayout(cam, e, folded, {});
       for (const x of fx) {
-        const id = `${folded ? 'сложена' : 'e=' + Math.round(e)} ${C.FX_LABEL[x.key]} ${x.size}×${x.len}`;
+        const id = `${folded ? 'сложена' : 'e=' + Math.round(e)} ${C.fxLabel(x.key)} ${x.size}×${x.len}`;
         assert.ok(x.len, id + ': нет стандартной длины');
         const minor = x.size === 'M5' ? 4.1 : 2.4;
         const S = C.fastenerSolids(x, { r: minor / 2, to: x.free });

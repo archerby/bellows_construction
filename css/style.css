@@ -54,6 +54,8 @@ button, .file-btn {
 button:hover, .file-btn:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 button.ghost, .file-btn.ghost { background: transparent; }
+select.lang { border: 1px solid var(--line); background: transparent; border-radius: 6px; padding: 4px 6px; font-size: 13px; cursor: pointer; }
+select.lang:hover { border-color: var(--accent); }
 
 .layout { display: grid; grid-template-columns: 330px 1fr; min-height: calc(100vh - 58px); }
 

@@ -5,111 +5,112 @@
   const Ex = window.BellowsExport;
   const Cam = window.BellowsCamera;
   const CSGM = window.BellowsCSG.M;
+  const I18n = window.BellowsI18n;
+  const tr = I18n.t;
+  const LANG_KEY = 'bellows.lang';
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const STORAGE_KEY = 'bellows.params.v1';
-  const f1 = (n) => (Math.round(n * 10) / 10).toFixed(1).replace('.', ',');
+  const escHtml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const f1 = (n) => I18n.num(n, 1);
 
   // ---------------------------------------------------------------------
   // Параметры: схема формы и пресеты
   // ---------------------------------------------------------------------
+  // Подписи полей: tr('field.<ключ>'), подсказки: tr('hint.<ключ>'), варианты: tr('opt.<ключ>.<значение>')
   const SCHEMA = [
     {
-      legend: 'Рамки',
+      legend: 'frames',
       fields: [
-        { key: 'sizeMode', label: 'Размеры задают', type: 'select', options: [['frame', 'по рамкам (манжетам)'], ['clear', 'по просвету в складках']],
-          hint: '«По рамкам» — размер, по которому мех вклеивается в рамку. «По просвету» — минимальное внутреннее отверстие в складках.' },
-        { pair: ['frontW', 'frontH'], label: 'Передняя (объектив), Ш × В' },
-        { pair: ['rearW', 'rearH'], label: 'Задняя (кассета), Ш × В' },
+        { key: 'sizeMode', type: 'select', options: ['frame', 'clear'], hint: true },
+        { pair: ['frontW', 'frontH'] },
+        { pair: ['rearW', 'rearH'] },
       ],
     },
     {
-      legend: 'Длина',
+      legend: 'length',
       fields: [
-        { key: 'maxExt', label: 'Макс. растяжение, мм', hint: 'Расстояние между рамками при полностью растянутом мехе.' },
-        { key: 'collarF', label: 'Манжета спереди, мм' },
-        { key: 'collarR', label: 'Манжета сзади, мм' },
-        { key: 'reserve', label: 'Запас длины, %', hint: 'На максимальном растяжении складки не распрямляются до конца — мех остаётся светонепроницаемым и жёстким.' },
+        { key: 'maxExt', hint: true },
+        { key: 'collarF' },
+        { key: 'collarR' },
+        { key: 'reserve', hint: true },
       ],
     },
     {
-      legend: 'Складки',
+      legend: 'folds',
       fields: [
-        { key: 'pitch', label: 'Ширина плашки, мм', step: 0.5, hint: 'Она же глубина складки. Обычно 8–15 мм; итоговая подгоняется под целое число складок.' },
-        { key: 'hingeGap', label: 'Зазор на сгибе, мм', step: 0.1, hint: 'Промежуток между соседними плашками — сюда ложится сгиб.' },
-        { key: 'cornerGap', label: 'Отступ от диагонали, мм', step: 0.1 },
-        { key: 'startOut', label: 'Первая складка верха', type: 'select', options: [['true', 'гребнем наружу'], ['false', 'гребнем внутрь']] },
+        { key: 'pitch', step: 0.5, hint: true },
+        { key: 'hingeGap', step: 0.1, hint: true },
+        { key: 'cornerGap', step: 0.1 },
+        { key: 'startOut', type: 'select', options: ['true', 'false'] },
       ],
     },
     {
-      legend: 'Материалы',
+      legend: 'materials',
       fields: [
-        { key: 'tStiff', label: 'Толщина плашки', type: 'select',
-          options: [['0.2', '0,2 мм'], ['0.4', '0,4 мм']],
-          hint: '0,2 мм — один слой: мягче, мех складывается плотнее. 0,4 мм — два слоя: жёстче, для крупных мехов (5×7″, 8×10″).' },
-        { key: 'tOuter', label: 'Наружный материал, мм', step: 0.05 },
-        { key: 'tLining', label: 'Подкладка, мм', step: 0.05 },
-        { key: 'flap', label: 'Клапан шва, мм', step: 0.5 },
+        { key: 'tStiff', type: 'select', options: ['0.2', '0.4'], optLabel: (v) => tr('unit.mm', { v: I18n.num(Number(v)) }), hint: true },
+        { key: 'tOuter', step: 0.05 },
+        { key: 'tLining', step: 0.05 },
+        { key: 'flap', step: 0.5 },
       ],
     },
   ];
 
   const PRESETS = {
-    '4x5t': { name: '4×5″ конический', frontW: 100, frontH: 100, rearW: 150, rearH: 150, maxExt: 400, pitch: 12, camFormat: '4x5' },
-    '4x5s': { name: '4×5″ прямой', frontW: 150, frontH: 150, rearW: 150, rearH: 150, maxExt: 400, pitch: 12, camFormat: '4x5' },
-    '4x5w': { name: '4×5″ широкоугольный (короткий)', frontW: 130, frontH: 130, rearW: 150, rearH: 150, maxExt: 180, pitch: 10, camFormat: '4x5' },
-    '5x7t': { name: '5×7″ конический', frontW: 120, frontH: 120, rearW: 210, rearH: 210, maxExt: 480, pitch: 14, camFormat: '5x7' },
-    '8x10t': { name: '8×10″ конический', frontW: 160, frontH: 160, rearW: 310, rearH: 310, maxExt: 650, pitch: 16, camFormat: '8x10' },
-    '6x9t': { name: '6×9 / 6×12 (среднеформатный задник)', frontW: 80, frontH: 80, rearW: 120, rearH: 100, maxExt: 260, pitch: 9 },
+    '4x5t': { frontW: 100, frontH: 100, rearW: 150, rearH: 150, maxExt: 400, pitch: 12, camFormat: '4x5' },
+    '4x5s': { frontW: 150, frontH: 150, rearW: 150, rearH: 150, maxExt: 400, pitch: 12, camFormat: '4x5' },
+    '4x5w': { frontW: 130, frontH: 130, rearW: 150, rearH: 150, maxExt: 180, pitch: 10, camFormat: '4x5' },
+    '5x7t': { frontW: 120, frontH: 120, rearW: 210, rearH: 210, maxExt: 480, pitch: 14, camFormat: '5x7' },
+    '8x10t': { frontW: 160, frontH: 160, rearW: 310, rearH: 310, maxExt: 650, pitch: 16, camFormat: '8x10' },
+    '6x9t': { frontW: 80, frontH: 80, rearW: 120, rearH: 100, maxExt: 260, pitch: 9 },
   };
 
-  const opts = (obj) => Object.entries(obj).map(([k, v]) => [k, v.name]);
+  // варианты из справочников камеры: названия берутся в момент построения формы (на текущем языке)
+  const fromCam = (obj) => ({ options: Object.keys(obj), optLabel: (v) => obj[v].name });
   const CAM_SCHEMA = [
     {
-      legend: 'Тип камеры',
+      legend: 'camType',
       fields: [
-        { key: 'camStyle', label: 'Конструкция', type: 'select', options: opts(Cam.STYLES),
-          hint: 'Монорельсовая — все подвижки, для студии. Складная — компактная коробка с откидной станиной: подъём и наклон спереди, задник неподвижный.' },
-        { key: 'camFieldRise', label: 'Подъём у складной, ±мм', hint: 'Больше подъём — выше коробка.' },
-        { key: 'camLensFold', label: 'Выступ объектива, мм', hint: 'Насколько объектив выступает вперёд от платы. Складная коробка делается такой глубины, чтобы он поместился внутрь.' },
+        Object.assign({ key: 'camStyle', type: 'select', hint: true }, fromCam(Cam.STYLES)),
+        { key: 'camFieldRise', hint: true },
+        { key: 'camLensFold', hint: true },
       ],
     },
     {
-      legend: 'Формат и кассеты',
+      legend: 'camFormat',
       fields: [
-        { key: 'camFormat', label: 'Формат', type: 'select', options: opts(Cam.FORMATS) },
-        { key: 'camHolderW', label: 'Ширина кассеты, мм', step: 0.1, hint: '0 — справочное значение для формата. Лучше измерить свою кассету.' },
-        { key: 'camFilmDepth', label: 'Глубина плоскости плёнки, мм', step: 0.05, hint: 'От лицевой плоскости кассеты до плёнки. 0 — справочное. Определяет резкость!' },
-        { key: 'camGroove', label: 'Канавка светового замка', type: 'select', options: [['true', 'есть'], ['false', 'нет (флок/уплотнитель)']] },
-        { key: 'camGlassT', label: 'Толщина матового стекла, мм', step: 0.1 },
+        Object.assign({ key: 'camFormat', type: 'select' }, fromCam(Cam.FORMATS)),
+        { key: 'camHolderW', step: 0.1, hint: true },
+        { key: 'camFilmDepth', step: 0.05, hint: true },
+        { key: 'camGroove', type: 'select', options: ['true', 'false'] },
+        { key: 'camGlassT', step: 0.1 },
       ],
     },
     {
-      legend: 'Объектив',
+      legend: 'camLens',
       fields: [
-        { key: 'camBoard', label: 'Объективная плата', type: 'select', options: opts(Cam.BOARDS) },
-        { pair: ['camBoardW', 'camBoardH'], label: 'Своя плата, Ш × В' },
-        { key: 'camShutter', label: 'Затвор', type: 'select', options: opts(Cam.SHUTTERS) },
-        { key: 'camShutterD', label: 'Свой диаметр затвора, мм', step: 0.1 },
+        Object.assign({ key: 'camBoard', type: 'select' }, fromCam(Cam.BOARDS)),
+        { pair: ['camBoardW', 'camBoardH'] },
+        Object.assign({ key: 'camShutter', type: 'select' }, fromCam(Cam.SHUTTERS)),
+        { key: 'camShutterD', step: 0.1 },
       ],
     },
     {
-      legend: 'Рельс и подвижки',
+      legend: 'camRail',
       fields: [
-        { key: 'camRail', label: 'Профиль', type: 'select', options: opts(Cam.RAILS) },
-        { key: 'camRailLength', label: 'Длина рельса, мм', hint: '0 — подобрать по растяжению меха.' },
-        { key: 'camRise', label: 'Подъём/опускание, ±мм', hint: 'Передняя рамка. Сдвиг и поворот — у обеих стоек, наклон — у обеих рамок.' },
-        { key: 'camShift', label: 'Сдвиг вбок, ±мм' },
-        { key: 'camTripod', label: 'Штативная резьба', type: 'select', options: opts(Cam.TRIPOD) },
+        Object.assign({ key: 'camRail', type: 'select' }, fromCam(Cam.RAILS)),
+        { key: 'camRailLength', hint: true },
+        { key: 'camRise', hint: true },
+        { key: 'camShift' },
+        Object.assign({ key: 'camTripod', type: 'select' }, fromCam(Cam.TRIPOD)),
       ],
     },
     {
-      legend: 'Печать',
+      legend: 'camPrint',
       fields: [
-        { pair: ['camBedW', 'camBedH'], label: 'Стол принтера, Ш × В' },
-        { key: 'camSplit', label: 'Большие детали', type: 'select', options: [['true', 'разрезать на части с «ласточкиным хвостом»'], ['false', 'не разрезать']],
-          hint: 'Место разреза выбирается автоматически — в стороне от отверстий, пазов и гнёзд гаек.' },
-        { key: 'camClearance', label: 'Зазор посадок, мм', step: 0.05, hint: 'Добавляется к отверстиям под гайки, платам и шипам составных деталей. 0,2–0,4 мм для FDM.' },
+        { pair: ['camBedW', 'camBedH'] },
+        { key: 'camSplit', type: 'select', options: ['true', 'false'], hint: true },
+        { key: 'camClearance', step: 0.05, hint: true },
       ],
     },
   ];
@@ -141,18 +142,18 @@
   function buildForm() {
     const root = $('#params');
     root.innerHTML = '';
+    for (const fs of $$('#cam-params fieldset')) fs.remove(); // форма камеры тоже строится заново (смена языка)
     const pf = document.createElement('fieldset');
-    pf.innerHTML = '<legend>Пресет</legend>';
+    pf.innerHTML = `<legend>${tr('legend.preset')}</legend>`;
     const sel = document.createElement('select');
     sel.className = 'preset';
     sel.id = 'preset';
-    sel.innerHTML = '<option value="">— выбрать типовой мех —</option>' +
-      Object.entries(PRESETS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('');
+    sel.innerHTML = `<option value="">${tr('preset.choose')}</option>` +
+      Object.keys(PRESETS).map((k) => `<option value="${k}">${tr('preset.' + k)}</option>`).join('');
     sel.addEventListener('change', () => {
       const pr = PRESETS[sel.value];
       if (!pr) return;
       const copy = Object.assign({}, pr);
-      delete copy.name;
       params = Object.assign({}, params, Geo.DEFAULTS, copy);
       fillForm();
       update();
@@ -163,14 +164,46 @@
     pf.appendChild(wrap);
     const note = document.createElement('div');
     note.className = 'field-hint';
-    note.textContent = 'Размеры пресетов ориентировочные — измерьте свои рамки.';
+    note.textContent = tr('preset.note');
     pf.appendChild(note);
     root.appendChild(pf);
 
     buildGroups(root, SCHEMA);
     buildGroups($('#cam-params'), CAM_SCHEMA);
-    attachInput(root);
-    attachInput($('#cam-params'));
+  }
+
+  // ---------------------------------------------------------------------
+  // Язык интерфейса
+  // ---------------------------------------------------------------------
+  function applyStaticText() {
+    document.documentElement.lang = I18n.getLang();
+    document.title = tr('app.title');
+    const meta = $('meta[name=description]');
+    if (meta) meta.content = tr('app.description');
+    for (const el of $$('[data-i18n]')) el.textContent = tr(el.dataset.i18n);
+    for (const el of $$('[data-i18n-title]')) el.title = tr(el.dataset.i18nTitle);
+    for (const el of $$('[data-i18n-aria]')) el.setAttribute('aria-label', tr(el.dataset.i18nAria));
+  }
+
+  function initLang() {
+    let lang = new URLSearchParams(location.search).get('lang');
+    if (!lang) try { lang = localStorage.getItem(LANG_KEY); } catch (e) { /* приватный режим */ }
+    if (!lang) lang = I18n.detect(navigator.languages || [navigator.language]);
+    I18n.setLang(lang);
+    const sel = $('#lang');
+    sel.innerHTML = I18n.LANGS.map((l) => `<option value="${l.code}">${l.name}</option>`).join('');
+    sel.value = I18n.getLang();
+    sel.addEventListener('change', () => {
+      I18n.setLang(sel.value);
+      try { localStorage.setItem(LANG_KEY, sel.value); } catch (e) { /* приватный режим */ }
+      const preset = $('#preset').value;
+      applyStaticText();
+      buildForm();
+      fillForm();
+      $('#preset').value = preset;
+      update(); // названия деталей, предупреждения и подписи чертежей пересчитываются на новом языке
+    });
+    applyStaticText();
   }
 
   function attachInput(root) {
@@ -189,13 +222,13 @@
     for (const group of schema) {
       const fs = document.createElement('fieldset');
       const lg = document.createElement('legend');
-      lg.textContent = group.legend;
+      lg.textContent = tr('legend.' + group.legend);
       fs.appendChild(lg);
       for (const f of group.fields) {
         const row = document.createElement('div');
         row.className = 'field';
         const label = document.createElement('label');
-        label.textContent = f.label;
+        label.textContent = tr('field.' + (f.key || f.pair[0]));
         row.appendChild(label);
         if (f.pair) {
           row.classList.add('pair');
@@ -210,7 +243,8 @@
           const s = document.createElement('select');
           s.id = 'p-' + f.key;
           s.dataset.key = f.key;
-          s.innerHTML = f.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+          const optLabel = f.optLabel || ((v) => tr(`opt.${f.key}.${v}`));
+          s.innerHTML = f.options.map((v) => `<option value="${v}">${escHtml(optLabel(v))}</option>`).join('');
           label.htmlFor = s.id;
           row.appendChild(s);
         } else {
@@ -221,7 +255,7 @@
         if (f.hint) {
           const h = document.createElement('div');
           h.className = 'field-hint';
-          h.textContent = f.hint;
+          h.textContent = tr('hint.' + f.key);
           row.appendChild(h);
         }
         fs.appendChild(row);
@@ -293,12 +327,12 @@
     if (!model.derived) { el.innerHTML = ''; return; }
     const d = model.derived, p = model.params;
     el.innerHTML = [
-      card('Складок на сторону', d.N, `плашка ${f1(d.hAct)} мм`),
-      card('Плашек', d.stiffenerCount, `по ${String(p.tStiff).replace('.', ',')} мм`),
-      card('Просвет в складках', `${f1(d.clearRear.w)}×${f1(d.clearRear.h)}`, `спереди ${f1(d.clearFront.w)}×${f1(d.clearFront.h)} мм`),
-      card('Габарит сложенного', `${f1(d.outerRear.w)}×${f1(d.outerRear.h)}`, 'сзади, мм'),
-      card('Растяжение', `${f1(d.minFrame)}…${f1(p.maxExt)}`, 'мм, мин. — оценка'),
-      card('Развёртка', `${f1(model.pattern.width)}×${f1(model.pattern.height)}`, `мм, ткань ≈ ${(d.fabricArea / 1e6).toFixed(2).replace('.', ',')} м²`),
+      card(tr('sum.folds'), d.N, tr('sum.foldsS', { h: f1(d.hAct) })),
+      card(tr('sum.stiff'), d.stiffenerCount, tr('sum.stiffS', { t: I18n.num(p.tStiff) })),
+      card(tr('sum.clear'), `${f1(d.clearRear.w)}×${f1(d.clearRear.h)}`, tr('sum.clearS', { w: f1(d.clearFront.w), h: f1(d.clearFront.h) })),
+      card(tr('sum.outer'), `${f1(d.outerRear.w)}×${f1(d.outerRear.h)}`, tr('sum.outerS')),
+      card(tr('sum.ext'), `${f1(d.minFrame)}…${f1(p.maxExt)}`, tr('sum.extS')),
+      card(tr('sum.pattern'), `${f1(model.pattern.width)}×${f1(model.pattern.height)}`, tr('sum.patternS', { area: I18n.num(d.fabricArea / 1e6, 2) })),
     ].join('');
   }
 
@@ -359,7 +393,7 @@
   function renderPattern() {
     mountSvg($('#pattern-view'), Ex.patternSVG(model, Object.assign({ physical: false }, patternOpts())));
     const plan = Ex.tilePlan(model, $('#print-paper').value, 8, 10);
-    $('#print-hint').textContent = `${plan.pages} лист(ов) ${plan.paper}, ${plan.landscape ? 'альбомная' : 'книжная'}, перекрытие 10 мм`;
+    $('#print-hint').textContent = tr(plan.landscape ? 'print.planLandscape' : 'print.planPortrait', { n: plan.pages, paper: plan.paper, overlap: 10 });
   }
 
   // Масштаб и сдвиг SVG-видов через viewBox
@@ -410,7 +444,7 @@
     try {
       viewer = new window.BellowsViewer($('#gl'));
     } catch (e) {
-      $('.canvas-wrap').innerHTML = `<div class="msg err" style="margin:12px">Не удалось запустить 3D: ${e.message}</div>`;
+      $('.canvas-wrap').innerHTML = `<div class="msg err" style="margin:12px">${escHtml(tr('err.3d', { msg: e.message }))}</div>`;
       viewer = null;
     }
     return viewer;
@@ -431,7 +465,7 @@
     if (extValue === null) extValue = Math.round((r.min + (r.max - r.min) * 0.75) * 2) / 2;
     extValue = Math.max(r.min, Math.min(r.max, extValue));
     range.value = extValue;
-    $('#ext-out').textContent = `${f1(extValue)} мм`;
+    $('#ext-out').textContent = tr('unit.mm', { v: f1(extValue) });
 
     const showFabric = $('#v-fabric').checked, showStiff = $('#v-stiff').checked, showEdges = $('#v-edges').checked;
     const mesh = Geo.buildMesh3D(model, extValue, { stiffOffset: showFabric ? 0.5 : 0 });
@@ -498,16 +532,16 @@
       });
       const W = cols * (cw + 10), H = rows * (ch + 10);
       mountSvg($('#stl-view'), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/>${parts.join('')}</svg>`);
-      info.innerHTML = `<b>${P.stiffeners.length}</b> плашек толщиной <b>${String(model.params.tStiff).replace('.', ',')} мм</b> → <b>${n}</b> стол(ов) ${o.bedW}×${o.bedH} мм. ` +
-        (pack.diagonalCount ? `Длинных плашек уложено по диагонали: <b>${pack.diagonalCount}</b>. ` : '') +
-        'В архиве для каждого стола STL и SVG-карта с номерами плашек. Цвет — сторона меха: A низ, B правая, C верх, D левая.' +
-        (pack.overflow.length ? ` <span style="color:#c0392b">Не помещаются на стол: ${pack.overflow.join(', ')}</span>` : '');
+      info.innerHTML = tr('stl.bedInfo', { n: `<b>${P.stiffeners.length}</b>`, t: `<b>${I18n.num(model.params.tStiff)}</b>`, beds: `<b>${n}</b>`, w: o.bedW, h: o.bedH }) + ' ' +
+        (pack.diagonalCount ? tr('stl.diagInfo', { n: `<b>${pack.diagonalCount}</b>` }) + ' ' : '') +
+        escHtml(tr('stl.bedLegend')) +
+        (pack.overflow.length ? ` <span style="color:#c0392b">${escHtml(tr('stl.overflow', { list: pack.overflow.join(', ') }))}</span>` : '');
     } else {
       mountSvg($('#stl-view'), Ex.patternSVG(model, { physical: false, stiffeners: true, labels: true, legend: false }));
       if (o.mode === 'pattern') {
         const fits = (P.width <= o.bedW && P.height <= o.bedH) || (P.height <= o.bedW && P.width <= o.bedH);
-        info.innerHTML = `Все плашки одним файлом в позициях развёртки: <b>${f1(P.width)} × ${f1(P.height)} мм</b>. ` +
-          (fits ? 'Помещается на стол.' : '<span style="color:#c0392b">Не помещается на стол — выберите «раскладку на стол» или печать по сторонам.</span>');
+        info.innerHTML = tr('stl.patternInfo', { size: `<b>${escHtml(tr('unit.mmPair', { a: f1(P.width), b: f1(P.height) }))}</b>` }) + ' ' +
+          (fits ? escHtml(tr('stl.fits')) : `<span style="color:#c0392b">${escHtml(tr('stl.noFit'))}</span>`);
       } else {
         const sizes = [0, 1, 2, 3].map((i) => {
           const ax = P.labels[i].axis;
@@ -517,7 +551,7 @@
           const bb = Geo.util.bbox(pts);
           return `${Geo.PANEL_NAMES[i]}: ${f1(bb.w)}×${f1(bb.h)}`;
         });
-        info.innerHTML = `Четыре файла, по одному на сторону, плашки в позициях развёртки (удобно накладывать ткань прямо на стол). Габариты, мм — ${sizes.join('; ')}.`;
+        info.innerHTML = escHtml(tr('stl.panelsInfo', { sizes: sizes.join('; ') }));
       }
     }
   }
@@ -525,7 +559,6 @@
   // ---------------------------------------------------------------------
   // Камера
   // ---------------------------------------------------------------------
-  const escHtml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
   function renderCamMessages() {
     const el = $('#cam-messages');
@@ -542,7 +575,7 @@
       camViewer.cam.yaw = -2.35;
       camViewer.cam.pitch = 0.32;
     } catch (e) {
-      $('#tab-camera .canvas-wrap').innerHTML = `<div class="msg err" style="margin:12px">Не удалось запустить 3D: ${escHtml(e.message)}</div>`;
+      $('#tab-camera .canvas-wrap').innerHTML = `<div class="msg err" style="margin:12px">${escHtml(tr('err.3d', { msg: e.message }))}</div>`;
       camViewer = null;
     }
     return camViewer;
@@ -607,25 +640,26 @@
     const count = camera.parts.reduce((s, p) => s + p.qty * (p.pieces ? p.pieces.length : 1), 0);
     const nSplit = camera.parts.filter((p) => p.pieces).length;
     const vol = camera.parts.reduce((s, p) => s + p.qty * p.volume, 0) / 1000;
+    const kinds = camera.parts.length;
+    const partsCard = card(tr('cs.parts'), count, nSplit ? tr('cs.partsSplit', { kinds, n: nSplit }) : tr('cs.partsS', { kinds }));
+    const plasticCard = card(tr('cs.plastic'), `≈ ${tr('cs.grams', { g: Math.round(vol * 1.25 * 0.6) })}`, tr('cs.plasticS', { vol: Math.round(vol) }));
     if (D.style === 'field') {
       const fb = D.fb;
       $('#cam-summary').innerHTML = [
-        card('Сложенная камера', `${Math.round(fb.closed.w)}×${Math.round(fb.closed.h)}×${Math.round(fb.closed.d)}`, 'мм, с задником'),
-        card('Растяжение', `${Math.round(fb.eMin)}…${Math.round(fb.eMax)}`, `мм на станине ${Math.round(fb.Lbed)} мм`),
-        card('Объектив', `≤ ${fb.lensFold} мм`, 'выступ вперёд, чтобы сложилась'),
-        card('Подвижки', `±${camera.params.camFieldRise} мм`, 'подъём и наклон спереди'),
-        card('Деталей для печати', count, nSplit ? `${camera.parts.length} видов, ${nSplit} разрезаны на части` : `${camera.parts.length} видов`),
-        card('Пластик', `≈ ${Math.round(vol * 1.25 * 0.6)} г`, `объём тел ${Math.round(vol)} см³, заполнение ~40 %`),
+        card(tr('cs.folded'), `${Math.round(fb.closed.w)}×${Math.round(fb.closed.h)}×${Math.round(fb.closed.d)}`, tr('cs.foldedS')),
+        card(tr('cs.ext'), `${Math.round(fb.eMin)}…${Math.round(fb.eMax)}`, tr('cs.extS', { bed: Math.round(fb.Lbed) })),
+        card(tr('cs.lens'), `≤ ${tr('unit.mm', { v: fb.lensFold })}`, tr('cs.lensS')),
+        card(tr('cs.moves'), `±${tr('unit.mm', { v: camera.params.camFieldRise })}`, tr('cs.movesS')),
+        partsCard, plasticCard,
       ].join('');
       return;
     }
     $('#cam-summary').innerHTML = [
-      card('Ось над рельсом', f1(D.A), 'мм'),
-      card('Передняя рамка', `${D.Sf}×${D.Sf}`, `плата ${D.board.w}×${D.board.h}`),
-      card('Задняя рамка', `${D.Sr}×${D.Sr}`, `кадр ${D.film[0]}×${D.film[1]}, задник поворотный`),
-      card('Рельс', `${D.railL}`, `мм, ${D.rail.name}`),
-      card('Деталей для печати', count, nSplit ? `${camera.parts.length} видов, ${nSplit} разрезаны на части` : `${camera.parts.length} видов`),
-      card('Пластик', `≈ ${Math.round(vol * 1.25 * 0.6)} г`, `объём тел ${Math.round(vol)} см³, заполнение ~40 %`),
+      card(tr('cs.axis'), f1(D.A), tr('cs.mm')),
+      card(tr('cs.front'), `${D.Sf}×${D.Sf}`, tr('cs.frontS', { w: D.board.w, h: D.board.h })),
+      card(tr('cs.rear'), `${D.Sr}×${D.Sr}`, tr('cs.rearS', { w: D.film[0], h: D.film[1] })),
+      card(tr('cs.rail'), `${D.railL}`, tr('cs.railS', { rail: D.rail.name })),
+      partsCard, plasticCard,
     ].join('');
   }
 
@@ -636,17 +670,18 @@
       let fitCell;
       if (p.pieces) {
         const sizes = p.pieces.map((pc) => { const b = pc.bounds().size; return `${Math.round(b[0])}×${Math.round(b[1])}`; }).join(', ');
-        fitCell = `<td class="${p.fits ? 'ok' : 'bad'}">разрезана на ${p.pieces.length} ч.<div class="hint">${sizes}</div></td>`;
+        fitCell = `<td class="${p.fits ? 'ok' : 'bad'}">${escHtml(tr('tbl.split', { n: p.pieces.length }))}<div class="hint">${sizes}</div></td>`;
       } else {
         const diag = p.fits && p.fitAngle !== 0 && p.fitAngle !== 90;
-        fitCell = `<td class="${p.fits ? 'ok' : 'bad'}">${p.fits ? (diag ? 'да, по диагонали' : 'да') : 'не влезает'}</td>`;
+        fitCell = `<td class="${p.fits ? 'ok' : 'bad'}">${escHtml(tr(p.fits ? (diag ? 'tbl.fitDiag' : 'tbl.fit') : 'tbl.noFit'))}</td>`;
       }
       return `<tr><td>${escHtml(p.name)}${p.note ? `<div class="hint">${escHtml(p.note)}</div>` : ''}</td>` +
         `<td class="num">${p.qty}</td><td class="num">${f1(sx)} × ${f1(sy)} × ${f1(sz)}</td>` + fitCell +
         `<td><button type="button" data-action="cam-part" data-part="${p.key}">STL</button></td></tr>`;
     }).join('');
-    $('#cam-parts').innerHTML = `<thead><tr><th>Деталь</th><th>Шт.</th><th>Габарит при печати, мм</th><th>Стол ${bw}×${bh}</th><th></th></tr></thead><tbody>${rows}</tbody>`;
-    $('#cam-bom').innerHTML = '<thead><tr><th>Покупное</th><th>Шт.</th><th>Где</th></tr></thead><tbody>' +
+    const th = (k, p) => `<th>${escHtml(tr(k, p))}</th>`;
+    $('#cam-parts').innerHTML = `<thead><tr>${th('tbl.part')}${th('tbl.qty')}${th('tbl.size')}${th('tbl.bed', { w: bw, h: bh })}<th></th></tr></thead><tbody>${rows}</tbody>`;
+    $('#cam-bom').innerHTML = `<thead><tr>${th('tbl.hw')}${th('tbl.qty')}${th('tbl.where')}</tr></thead><tbody>` +
       camera.hardware.map((h) => `<tr><td>${escHtml(h.name)}</td><td class="num">${h.qty}</td><td>${escHtml(h.note)}</td></tr>`).join('') + '</tbody>';
   }
 
@@ -666,7 +701,7 @@
     $('#cv-folded-wrap').hidden = !isField;
     $('#cv-rail-wrap').hidden = isField;
     range.disabled = folded;
-    $('#cam-ext-out').textContent = folded ? 'сложена' : `${f1(camExt)} мм`;
+    $('#cam-ext-out').textContent = folded ? tr('cv.folded') : tr('unit.mm', { v: f1(camExt) });
 
     const tris = [];
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
@@ -809,7 +844,7 @@
     'cam-zip': (btn) => {
       if (!camera || !camera.ok) return;
       const old = btn.textContent;
-      btn.textContent = 'Собираю архив…';
+      btn.textContent = tr('btn.zipping');
       btn.disabled = true;
       setTimeout(() => {
         try {
@@ -842,8 +877,11 @@
   // Инициализация
   // ---------------------------------------------------------------------
   function init() {
+    initLang();
     load();
     buildForm();
+    attachInput($('#params'));
+    attachInput($('#cam-params'));
     fillForm();
     for (const b of $$('.tabs button')) b.addEventListener('click', () => setTab(b.dataset.tab));
     document.addEventListener('click', (e) => {
@@ -888,7 +926,7 @@
           fillForm();
           update();
         } catch (err) {
-          alert('Не удалось прочитать файл параметров: ' + err.message);
+          alert(tr('err.json', { msg: err.message }));
         }
       });
       e.target.value = '';

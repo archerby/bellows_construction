@@ -13,11 +13,11 @@
  * (window.BellowsGeometry) и в Node (require).
  */
 (function (root, factory) {
-  const api = factory();
-  if (typeof module === 'object' && module.exports) module.exports = api;
-  else root.BellowsGeometry = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./i18n.js'));
+  else root.BellowsGeometry = factory(root.BellowsI18n);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (I18n) {
   'use strict';
+  const { t, num } = I18n;
 
   const DEFAULTS = {
     sizeMode: 'frame', // 'frame' — размеры по рамкам (манжетам), 'clear' — внутренний просвет в складках
@@ -43,7 +43,7 @@
   const STIFF_THICKNESSES = [0.2, 0.4];
 
   const PANEL_NAMES = ['A', 'B', 'C', 'D'];
-  const PANEL_TITLES = ['низ', 'правая', 'верх', 'левая'];
+  const panelTitle = (i) => t('panel.' + PANEL_NAMES[i]); // низ, правая, верх, левая — на языке интерфейса
 
   // ---------- 2D-векторы ----------
   const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
@@ -238,18 +238,14 @@
     const errors = [], warnings = [];
     const tSand = p.tStiff + p.tOuter + p.tLining;
 
-    const positive = [
-      ['frontW', 'ширина передней рамки'], ['frontH', 'высота передней рамки'],
-      ['rearW', 'ширина задней рамки'], ['rearH', 'высота задней рамки'],
-      ['maxExt', 'максимальное растяжение'], ['pitch', 'ширина плашки'], ['tStiff', 'толщина плашки'],
-    ];
-    for (const [k, name] of positive) if (!(p[k] > 0)) errors.push(`Параметр «${name}» должен быть больше нуля.`);
-    for (const [k, name] of [['collarF', 'передняя манжета'], ['collarR', 'задняя манжета'], ['hingeGap', 'зазор на сгибе'],
-      ['cornerGap', 'отступ от диагонали'], ['flap', 'клапан'], ['tOuter', 'толщина материала'], ['tLining', 'толщина подкладки'], ['reserve', 'запас длины']]) {
-      if (p[k] < 0) errors.push(`Параметр «${name}» не может быть отрицательным.`);
+    for (const k of ['frontW', 'frontH', 'rearW', 'rearH', 'maxExt', 'pitch', 'tStiff']) {
+      if (!(p[k] > 0)) errors.push(t('geo.err.positive', { name: t('geo.param.' + k) }));
+    }
+    for (const k of ['collarF', 'collarR', 'hingeGap', 'cornerGap', 'flap', 'tOuter', 'tLining', 'reserve']) {
+      if (p[k] < 0) errors.push(t('geo.err.negative', { name: t('geo.param.' + k) }));
     }
     const Lw = p.maxExt - p.collarF - p.collarR;
-    if (!(Lw > 0)) errors.push('Максимальное растяжение должно быть больше суммы длин манжет.');
+    if (!(Lw > 0)) errors.push(t('geo.err.collars'));
     if (errors.length) return { ok: false, params: p, errors, warnings };
 
     const Lp = Lw * (1 + p.reserve / 100); // длина гофрированной части в развёртке (по оси)
@@ -276,7 +272,7 @@
     const panels = [0, 1, 2, 3].map((i) => {
       const d = panelDims(i, mid);
       return {
-        index: i, name: PANEL_NAMES[i], title: PANEL_TITLES[i],
+        index: i, name: PANEL_NAMES[i], title: panelTitle(i),
         Wf: d.Wf, Wr: d.Wr, Of: d.Of, Or: d.Or, k: kList[i], h: axPitch * kList[i], T: null,
       };
     });
@@ -469,14 +465,14 @@
 
     // ---------- Предупреждения ----------
     const minClear = Math.min(derived.clearFront.w, derived.clearFront.h, derived.clearRear.w, derived.clearRear.h);
-    if (minClear <= 0) errors.push('Складки слишком глубокие для такой рамки: внутренний просвет получается нулевым. Уменьшите ширину плашки.');
-    else if (minClear < 3 * hAct) warnings.push(`Внутренний просвет в складках всего ${minClear.toFixed(1)} мм — проверьте, что мех не срежет изображение.`);
-    if (p.flap < cAmp) warnings.push(`Клапан (${p.flap} мм) уже половины ширины плашки (${cAmp.toFixed(1)} мм): угловые диагонали шва не поместятся на клапане.`);
-    if (p.hingeGap < 2 * tSand) warnings.push(`Зазор на сгибе ${p.hingeGap} мм меньше двойной толщины пакета (${(2 * tSand).toFixed(2)} мм) — мех будет плохо складываться.`);
-    if (N < 6) warnings.push('Очень мало складок: мех будет короткоходным. Уменьшите ширину плашки или увеличьте растяжение.');
-    if (dropped > 0) warnings.push(`Плашек пропущено как слишком мелких: ${dropped}.`);
+    if (minClear <= 0) errors.push(t('geo.err.clearZero'));
+    else if (minClear < 3 * hAct) warnings.push(t('geo.warn.clearSmall', { clear: num(minClear, 1) }));
+    if (p.flap < cAmp) warnings.push(t('geo.warn.flap', { flap: num(p.flap), half: num(cAmp, 1) }));
+    if (p.hingeGap < 2 * tSand) warnings.push(t('geo.warn.hingeGap', { gap: num(p.hingeGap), pack: num(2 * tSand, 2) }));
+    if (N < 6) warnings.push(t('geo.warn.fewFolds'));
+    if (dropped > 0) warnings.push(t('geo.warn.dropped', { n: dropped }));
     const taper = Math.max(...panels.map((pn) => Math.abs(pn.Or - pn.Of) / (2 * Lt)));
-    if (taper > 0.35) warnings.push('Очень сильная конусность: складки на углах будут работать с перекосом, проверьте на макете из бумаги.');
+    if (taper > 0.35) warnings.push(t('geo.warn.taper'));
 
     return {
       ok: errors.length === 0, params: p, errors, warnings, derived, panels, zk, pattern,
@@ -547,7 +543,7 @@
   }
 
   return {
-    DEFAULTS, PANEL_NAMES, PANEL_TITLES, STIFF_THICKNESSES,
+    DEFAULTS, PANEL_NAMES, panelTitle, STIFF_THICKNESSES,
     normalizeParams, computeBellows, buildMesh3D,
     // утилиты (используются экспортом и тестами)
     util: { add, sub, mul, dot, cross, len, norm, lerp, polyArea, polyCentroid, bbox, insetPolygon, clipHalfPlane, clipSegment, invBilinear, bilinear3 },

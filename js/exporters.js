@@ -3,10 +3,11 @@
  * плашки (STL, раскладка на стол принтера), ZIP-архив без сжатия.
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./geometry.js'));
-  else root.BellowsExport = factory(root.BellowsGeometry);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (Geo) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./geometry.js'), require('./i18n.js'));
+  else root.BellowsExport = factory(root.BellowsGeometry, root.BellowsI18n);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (Geo, I18n) {
   'use strict';
+  const { t, num } = I18n;
   const U = Geo.util;
   const { add, sub, mul, dot, len, norm, bbox, polyArea, polyCentroid } = U;
 
@@ -14,7 +15,7 @@
     const r = Math.round(n * 1000) / 1000;
     return Object.is(r, -0) ? '0' : String(r);
   };
-  const f1 = (n) => (Math.round(n * 10) / 10).toFixed(1).replace('.', ',');
+  const f1 = (n) => num(n, 1); // подписи — с десятичным разделителем языка (координаты — через fmt)
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   const COLORS = {
@@ -83,8 +84,8 @@
         const rotAttr = (pt) => `text-anchor="middle" transform="rotate(${fmt(ang)} ${fmt(pt[0])} ${fmt(pt[1])})"`;
         o.push(textEl(L.center[0], L.center[1], `${pn.name} — ${pn.title}`, big, `${rotAttr(L.center)} font-weight="bold" fill-opacity="0.45"`));
         if (L.panel === 1 || L.panel === 2) {
-          if (model.params.collarF >= 4) o.push(textEl(L.front[0], L.front[1] + small * 0.35, 'ПЕРЕД (объектив)', small, rotAttr(L.front)));
-          if (model.params.collarR >= 4) o.push(textEl(L.rear[0], L.rear[1] + small * 0.35, 'ЗАД (кассета)', small, rotAttr(L.rear)));
+          if (model.params.collarF >= 4) o.push(textEl(L.front[0], L.front[1] + small * 0.35, t('pat.front'), small, rotAttr(L.front)));
+          if (model.params.collarR >= 4) o.push(textEl(L.rear[0], L.rear[1] + small * 0.35, t('pat.rear'), small, rotAttr(L.rear)));
         }
       }
       o.push('</g>');
@@ -97,11 +98,11 @@
     const o = [];
     const fs = 3.2;
     const items = [
-      [`stroke="${COLORS.cut}" stroke-width="0.35"`, 'контур — резать'],
-      [`stroke="${COLORS.mountain}" stroke-width="0.35" stroke-dasharray="${DASH.M}"`, 'горная складка (гребень наружу)'],
-      [`stroke="${COLORS.valley}" stroke-width="0.35" stroke-dasharray="${DASH.V}"`, 'долинная складка (гребень внутрь)'],
-      [`stroke="${COLORS.diag}" stroke-width="0.35"`, 'угловые диагонали 45°'],
-      [`stroke="${COLORS.corner}" stroke-width="0.35" stroke-dasharray="0.6 0.8"`, 'рёбра (не сгибать)'],
+      [`stroke="${COLORS.cut}" stroke-width="0.35"`, t('pat.legend.cut')],
+      [`stroke="${COLORS.mountain}" stroke-width="0.35" stroke-dasharray="${DASH.M}"`, t('pat.legend.mountain')],
+      [`stroke="${COLORS.valley}" stroke-width="0.35" stroke-dasharray="${DASH.V}"`, t('pat.legend.valley')],
+      [`stroke="${COLORS.diag}" stroke-width="0.35"`, t('pat.legend.diag')],
+      [`stroke="${COLORS.corner}" stroke-width="0.35" stroke-dasharray="0.6 0.8"`, t('pat.legend.corner')],
     ];
     let cx = x, cy = y + 4;
     const colW = Math.max(62, (width - 10) / 3);
@@ -112,15 +113,15 @@
       if ((idx + 1) % 3 === 0) { cx = x; cy += 6; }
     });
     o.push(`<rect x="${fmt(cx)}" y="${fmt(cy - 3)}" width="12" height="4" fill="${COLORS.stiffFill}" fill-opacity="0.55" stroke="${COLORS.stiffStroke}" stroke-width="0.15"/>`);
-    o.push(textEl(cx + 14, cy, `плашки ${p.tStiff} мм (${d.stiffenerCount} шт.)`, fs));
+    o.push(textEl(cx + 14, cy, t('pat.legend.stiff', { t: num(p.tStiff), n: d.stiffenerCount }), fs));
     cy += 8;
     // масштабная линейка 100 мм — для проверки масштаба при печати
     const sx = x, sy = cy;
     o.push(`<rect x="${fmt(sx)}" y="${fmt(sy - 2)}" width="100" height="2" fill="none" stroke="#000" stroke-width="0.2"/>`);
     for (let i = 0; i < 10; i += 2) o.push(`<rect x="${fmt(sx + i * 10)}" y="${fmt(sy - 2)}" width="10" height="2" fill="#000"/>`);
-    o.push(textEl(sx + 102, sy, '100 мм — проверьте масштаб после печати', fs));
+    o.push(textEl(sx + 102, sy, t('pat.scale'), fs));
     o.push(textEl(sx, sy + 6,
-      `Складок: ${d.N} на сторону · шаг ${f1(d.hAct)} мм · зазор ${f1(p.hingeGap)} мм · манжеты ${f1(p.collarF)}/${f1(p.collarR)} мм · клапан ${f1(p.flap)} мм · габарит ${f1(model.pattern.width)} × ${f1(model.pattern.height)} мм`, fs));
+      t('pat.summary', { n: d.N, h: f1(d.hAct), gap: f1(p.hingeGap), cf: f1(p.collarF), cr: f1(p.collarR), flap: f1(p.flap), w: f1(model.pattern.width), hh: f1(model.pattern.height) }), fs));
     return o.join('\n');
   }
 
@@ -135,7 +136,7 @@
     const d = model.derived, p = model.params;
     const o = [];
     o.push(`<rect x="0" y="0" width="${fmt(L.W)}" height="${fmt(L.H)}" fill="#ffffff"/>`);
-    o.push(textEl(L.m, L.m + 4, `Развёртка меха: рамки ${f1(d.mid.fW)}×${f1(d.mid.fH)} → ${f1(d.mid.rW)}×${f1(d.mid.rH)} мм, растяжение до ${f1(p.maxExt)} мм`, 4.2, 'font-weight="bold"'));
+    o.push(textEl(L.m, L.m + 4, t('pat.title', { fw: f1(d.mid.fW), fh: f1(d.mid.fH), rw: f1(d.mid.rW), rh: f1(d.mid.rH), ext: f1(p.maxExt) }), 4.2, 'font-weight="bold"'));
     o.push(`<g transform="translate(${fmt(L.m)} ${fmt(L.m + L.titleH)})">${patternBody(model, opt)}</g>`);
     if (opt.legend) o.push(patternLegend(model, L.m, L.m + L.titleH + P.height + 6, L.W - 2 * L.m));
     return o.join('\n');
@@ -185,7 +186,7 @@
         marks.push(cross(x0 + overlap / 2, y0 + overlap / 2), cross(x0 + pw - overlap / 2, y0 + overlap / 2),
           cross(x0 + overlap / 2, y0 + ph - overlap / 2), cross(x0 + pw - overlap / 2, y0 + ph - overlap / 2));
         marks.push(`<rect x="${fmt(x0 + pw - 34)}" y="${fmt(y0 + ph - 7)}" width="33" height="6" fill="#fff" fill-opacity="0.85"/>`);
-        marks.push(textEl(x0 + pw - 33, y0 + ph - 2.6, `лист ${r + 1}-${c + 1} (${rows}×${cols})`, 3));
+        marks.push(textEl(x0 + pw - 33, y0 + ph - 2.6, t('print.sheet', { r: r + 1, c: c + 1, rows, cols }), 3));
         pages.push(`<div class="print-page"><svg xmlns="http://www.w3.org/2000/svg" width="${fmt(pw)}mm" height="${fmt(ph)}mm" viewBox="${fmt(x0)} ${fmt(y0)} ${fmt(pw)} ${fmt(ph)}">${inner}${marks.join('')}</svg></div>`);
       }
     }
@@ -268,19 +269,19 @@
       g.push(`<rect x="${fmt(x0 - frameT)}" y="${fmt(cy - frontSize / 2 - frameOver)}" width="${fmt(frameT)}" height="${fmt(frontSize + 2 * frameOver)}" fill="#bbb" stroke="#000" stroke-width="0.3"/>`);
       g.push(`<rect x="${fmt(x0 + E)}" y="${fmt(cy - rearSize / 2 - frameOver)}" width="${fmt(frameT)}" height="${fmt(rearSize + 2 * frameOver)}" fill="#bbb" stroke="#000" stroke-width="0.3"/>`);
       // размеры
-      g.push(dim([x0, cy + Math.max(frontSize, rearSize) / 2 + frameOver], [x0 + E, cy + Math.max(frontSize, rearSize) / 2 + frameOver], -fs * 2.2, `${f1(E)} (макс. растяжение)`, fs));
+      g.push(dim([x0, cy + Math.max(frontSize, rearSize) / 2 + frameOver], [x0 + E, cy + Math.max(frontSize, rearSize) / 2 + frameOver], -fs * 2.2, t('dr.maxExt', { v: f1(E) }), fs));
       g.push(dim([x0 - frameT, cy + frontSize / 2], [x0 - frameT, cy - frontSize / 2], -fs * 1.8, f1(frontSize), fs));
       g.push(dim([x0 + E + frameT, cy - rearSize / 2], [x0 + E + frameT, cy + rearSize / 2], -fs * 1.8, f1(rearSize), fs));
       return g.join('\n');
     };
-    o.push(view(y1, 'Y', d.mid.fH, d.mid.rH, 'Вид сбоку (растянут)'));
-    o.push(view(y2, 'X', d.mid.fW, d.mid.rW, 'Вид сверху (растянут)'));
-    o.push(textEl(x0 - frameT, y2 + viewH2 / 2 + fs * 0.5, 'передняя рамка (объектив)', fs * 0.8));
-    o.push(textEl(x0 + E + frameT, y2 + viewH2 / 2 + fs * 0.5, 'задняя рамка (кассета)', fs * 0.8, 'text-anchor="end"'));
+    o.push(view(y1, 'Y', d.mid.fH, d.mid.rH, t('dr.side')));
+    o.push(view(y2, 'X', d.mid.fW, d.mid.rW, t('dr.top')));
+    o.push(textEl(x0 - frameT, y2 + viewH2 / 2 + fs * 0.5, t('dr.frontFrame'), fs * 0.8));
+    o.push(textEl(x0 + E + frameT, y2 + viewH2 / 2 + fs * 0.5, t('dr.rearFrame'), fs * 0.8, 'text-anchor="end"'));
 
     // Вид сзади
     const rect = (w, h, attrs) => `<rect x="${fmt(endCx - w / 2)}" y="${fmt(endCy - h / 2)}" width="${fmt(w)}" height="${fmt(h)}" ${attrs}/>`;
-    o.push(textEl(endCx - outW / 2, endCy - outH / 2 - fs * 3.2, 'Вид со стороны кассеты', fs * 1.1, 'font-weight="bold"'));
+    o.push(textEl(endCx - outW / 2, endCy - outH / 2 - fs * 3.2, t('dr.endView'), fs * 1.1, 'font-weight="bold"'));
     o.push(rect(d.outerRear.w, d.outerRear.h, 'fill="#3a3a3e" fill-opacity="0.12" stroke="#111" stroke-width="0.25" stroke-dasharray="4 1 1 1"'));
     o.push(rect(d.mid.rW, d.mid.rH, 'fill="none" stroke="#111" stroke-width="0.4"'));
     o.push(rect(d.clearRear.w, d.clearRear.h, 'fill="#fff" stroke="#1f5fbf" stroke-width="0.3" stroke-dasharray="2 1"'));
@@ -289,14 +290,14 @@
     o.push(lineEl([endCx - outW / 2 - 4, endCy], [endCx + outW / 2 + 4, endCy], 'stroke="#555" stroke-width="0.12" stroke-dasharray="8 1.5 1.5 1.5"'));
     o.push(lineEl([endCx, endCy - outH / 2 - 4], [endCx, endCy + outH / 2 + 4], 'stroke="#555" stroke-width="0.12" stroke-dasharray="8 1.5 1.5 1.5"'));
     const ow = d.outerRear.w, oh = d.outerRear.h;
-    o.push(dim([endCx - ow / 2, endCy - oh / 2], [endCx + ow / 2, endCy - oh / 2], fs * 1.6, `${f1(ow)} (сложен)`, fs * 0.85));
+    o.push(dim([endCx - ow / 2, endCy - oh / 2], [endCx + ow / 2, endCy - oh / 2], fs * 1.6, t('dr.folded', { v: f1(ow) }), fs * 0.85));
     o.push(dim([endCx + ow / 2, endCy - oh / 2], [endCx + ow / 2, endCy + oh / 2], fs * 1.6, `${f1(oh)}`, fs * 0.85));
-    o.push(dim([endCx - d.mid.rW / 2, endCy + d.mid.rH / 2], [endCx + d.mid.rW / 2, endCy + d.mid.rH / 2], -fs * 2.4 - (oh - d.mid.rH) / 2, `${f1(d.mid.rW)} (рамка)`, fs * 0.85));
-    o.push(dim([endCx - d.clearRear.w / 2, endCy + d.clearRear.h / 2], [endCx + d.clearRear.w / 2, endCy + d.clearRear.h / 2], fs * 1.5, `${f1(d.clearRear.w)} просвет`, fs * 0.75));
-    o.push(dim([endCx - d.clearFront.w / 2, endCy - d.clearFront.h / 2], [endCx + d.clearFront.w / 2, endCy - d.clearFront.h / 2], -fs * 1.5, `${f1(d.clearFront.w)} просвет спереди`, fs * 0.7));
+    o.push(dim([endCx - d.mid.rW / 2, endCy + d.mid.rH / 2], [endCx + d.mid.rW / 2, endCy + d.mid.rH / 2], -fs * 2.4 - (oh - d.mid.rH) / 2, t('dr.frame', { v: f1(d.mid.rW) }), fs * 0.85));
+    o.push(dim([endCx - d.clearRear.w / 2, endCy + d.clearRear.h / 2], [endCx + d.clearRear.w / 2, endCy + d.clearRear.h / 2], fs * 1.5, t('dr.clear', { v: f1(d.clearRear.w) }), fs * 0.75));
+    o.push(dim([endCx - d.clearFront.w / 2, endCy - d.clearFront.h / 2], [endCx + d.clearFront.w / 2, endCy - d.clearFront.h / 2], -fs * 1.5, t('dr.clearFront', { v: f1(d.clearFront.w) }), fs * 0.7));
 
     // Таблица
-    o.push(textEl(tableX, tableY, 'Параметры меха', fs * 1.1, 'font-weight="bold"'));
+    o.push(textEl(tableX, tableY, t('dr.table'), fs * 1.1, 'font-weight="bold"'));
     rowsTable.forEach((r, i) => {
       const yy = tableY + fs * 1.9 + i * fs * 1.6;
       o.push(textEl(tableX, yy, r[0], fs * 0.85));
@@ -310,21 +311,22 @@
 
   function drawingTable(model) {
     const p = model.params, d = model.derived;
+    const mm = (a, b) => t('unit.mmPair', { a, b });
     return [
-      ['Рамка передняя (по манжете)', `${f1(d.mid.fW)} × ${f1(d.mid.fH)} мм`],
-      ['Рамка задняя (по манжете)', `${f1(d.mid.rW)} × ${f1(d.mid.rH)} мм`],
-      ['Просвет в складках, перед', `${f1(d.clearFront.w)} × ${f1(d.clearFront.h)} мм`],
-      ['Просвет в складках, зад', `${f1(d.clearRear.w)} × ${f1(d.clearRear.h)} мм`],
-      ['Габарит сложенного меха, зад', `${f1(d.outerRear.w)} × ${f1(d.outerRear.h)} мм`],
-      ['Макс. растяжение', `${f1(p.maxExt)} мм`],
-      ['Мин. расстояние между рамками ≈', `${f1(d.minFrame)} мм`],
-      ['Длина развёртки (по оси)', `${f1(d.Lt)} мм`],
-      ['Складок (граней) на сторону', `${d.N}`],
-      ['Ширина плашки / глубина складки', `${f1(d.hAct)} мм`],
-      ['Зазор на сгибе / у диагонали', `${f1(p.hingeGap)} / ${f1(p.cornerGap)} мм`],
-      ['Манжеты перед / зад', `${f1(p.collarF)} / ${f1(p.collarR)} мм`],
-      ['Плашек всего', `${d.stiffenerCount} шт., ${p.tStiff} мм`],
-      ['Материал: наружный / подкладка', `${p.tOuter} / ${p.tLining} мм`],
+      [t('dr.row.front'), mm(f1(d.mid.fW), f1(d.mid.fH))],
+      [t('dr.row.rear'), mm(f1(d.mid.rW), f1(d.mid.rH))],
+      [t('dr.row.clearFront'), mm(f1(d.clearFront.w), f1(d.clearFront.h))],
+      [t('dr.row.clearRear'), mm(f1(d.clearRear.w), f1(d.clearRear.h))],
+      [t('dr.row.outer'), mm(f1(d.outerRear.w), f1(d.outerRear.h))],
+      [t('dr.row.maxExt'), t('unit.mm', { v: f1(p.maxExt) })],
+      [t('dr.row.minFrame'), t('unit.mm', { v: f1(d.minFrame) })],
+      [t('dr.row.length'), t('unit.mm', { v: f1(d.Lt) })],
+      [t('dr.row.folds'), `${d.N}`],
+      [t('dr.row.pitch'), t('unit.mm', { v: f1(d.hAct) })],
+      [t('dr.row.gaps'), t('unit.mmSlash', { a: f1(p.hingeGap), b: f1(p.cornerGap) })],
+      [t('dr.row.collars'), t('unit.mmSlash', { a: f1(p.collarF), b: f1(p.collarR) })],
+      [t('dr.row.stiff'), t('dr.row.stiffV', { n: d.stiffenerCount, t: num(p.tStiff) })],
+      [t('dr.row.material'), t('unit.mmSlash', { a: num(p.tOuter), b: num(p.tLining) })],
     ];
   }
 
@@ -634,7 +636,7 @@
     const o = [];
     const m = 6;
     o.push(`<rect x="0" y="0" width="${fmt(bedW + 2 * m)}" height="${fmt(bedH + 2 * m + 8)}" fill="#fff"/>`);
-    o.push(textEl(m, 5.5, `Стол ${index + 1}: ${bed.items.length} плашек (${fmt(bedW)}×${fmt(bedH)} мм)${bed.diagonal ? ' — по диагонали' : ''}`, 4, 'font-weight="bold"'));
+    o.push(textEl(m, 5.5, t(bed.diagonal ? 'bed.titleDiag' : 'bed.title', { i: index + 1, n: bed.items.length, w: fmt(bedW), h: fmt(bedH) }), 4, 'font-weight="bold"'));
     // В слайсере начало координат стола — внизу слева; в SVG ось Y направлена вниз, поэтому отражаем.
     o.push(`<g transform="translate(${m} ${m + 8 + bedH}) scale(1 -1)">`);
     o.push(`<rect x="0" y="0" width="${fmt(bedW)}" height="${fmt(bedH)}" fill="#f6f6f6" stroke="#444" stroke-width="0.4"/>`);
@@ -720,20 +722,20 @@
   // =====================================================================
   function stiffenerFiles(model, options) {
     const opt = Object.assign({ mode: 'bed', bedW: 220, bedH: 220, gap: 2, margin: 3, diagonal: true }, options);
-    const t = model.params.tStiff;
+    const th = model.params.tStiff;
     const S = model.pattern.stiffeners;
     const files = [];
+    const layers = Math.round(th / 0.2);
     const note = [
-      'Плашки (рёбра жёсткости) для меха крупноформатной камеры',
-      `Толщина: ${t} мм — ${Math.round(t / 0.2) === 1 ? 'один слой высотой 0,2 мм' : `${Math.round(t / 0.2)} слоя по 0,2 мм`}.`,
-      'Обозначения: буква — сторона меха (A — низ, B — правая, C — верх, D — левая),',
-      'число — номер складки от передней рамки (объектива).',
-      'Карта расположения на столе — в SVG-файлах рядом с STL.',
+      t('stl.note.title'),
+      t(layers === 1 ? 'stl.note.oneLayer' : 'stl.note.layers', { t: num(th), n: layers, h: num(0.2) }),
+      t('stl.note.legend'),
+      t('stl.note.map'),
       '',
     ];
     if (opt.mode === 'pattern') {
-      files.push({ name: 'stiffeners_pattern.stl', data: stiffenersSTL(S.map((s) => flipY(s.poly, model.pattern.height)), t) });
-      note.push('stiffeners_pattern.stl — все плашки в точных позициях развёртки (удобно, если развёртка помещается на стол).');
+      files.push({ name: 'stiffeners_pattern.stl', data: stiffenersSTL(S.map((s) => flipY(s.poly, model.pattern.height)), th) });
+      note.push(t('stl.note.pattern'));
     } else if (opt.mode === 'panels') {
       for (let i = 0; i < 4; i++) {
         // поворачиваем сторону так, чтобы её ось (перед → зад) шла вертикально
@@ -744,19 +746,19 @@
         if (!polys.length) continue;
         const bb = bbox([].concat(...polys));
         const moved = polys.map((pl) => pl.map((p) => [p[0] - bb.minx, bb.maxy - p[1]]));
-        files.push({ name: `stiffeners_panel_${Geo.PANEL_NAMES[i]}.stl`, data: stiffenersSTL(moved, t) });
+        files.push({ name: `stiffeners_panel_${Geo.PANEL_NAMES[i]}.stl`, data: stiffenersSTL(moved, th) });
       }
-      note.push('stiffeners_panel_X.stl — плашки каждой стороны в позициях развёртки.');
+      note.push(t('stl.note.panels'));
     } else {
       const pack = packStiffeners(S, opt.bedW, opt.bedH, opt.gap, opt.margin, { diagonal: opt.diagonal });
       pack.beds.forEach((bed, i) => {
         const n = String(i + 1).padStart(2, '0');
-        files.push({ name: `bed_${n}.stl`, data: stiffenersSTL(bed.items.map((it) => it.poly), t) });
+        files.push({ name: `bed_${n}.stl`, data: stiffenersSTL(bed.items.map((it) => it.poly), th) });
         files.push({ name: `bed_${n}_map.svg`, data: bedSVG(bed, opt.bedW, opt.bedH, i, { physical: true }) });
       });
-      if (pack.diagonalCount) note.push(`Длинные плашки (${pack.diagonalCount} шт.) уложены по диагонали стола — в заголовке карты такого стола стоит «по диагонали».`);
-      if (pack.overflow.length) note.push(`Не поместились на стол: ${pack.overflow.join(', ')}`);
-      note.push(`Столов: ${pack.beds.length}, размер ${opt.bedW}×${opt.bedH} мм.`);
+      if (pack.diagonalCount) note.push(t('stl.note.diag', { n: pack.diagonalCount }));
+      if (pack.overflow.length) note.push(t('stl.note.overflow', { list: pack.overflow.join(', ') }));
+      note.push(t('stl.note.beds', { n: pack.beds.length, w: opt.bedW, h: opt.bedH }));
     }
     files.push({ name: 'README.txt', data: note.join('\r\n') + '\r\n' });
     return files;
