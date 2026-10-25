@@ -49,7 +49,7 @@
     '24x30': [240, 300], '30x40': [300, 400], '40x50': [400, 500], '50x60': [500, 600],
   };
   const BALANCE = ['friction', 'spring', 'weight'];
-  const LEDS = ['strip', 'panel'];
+  const LEDS = ['strip', 'panel', 'lightbox'];
   const SPRING_N = [5, 7.5, 10, 12.5, 15, 20, 25, 30, 40, 50]; // пружины постоянного усилия: типовой ряд, Н
   const M6 = { hole: 6.6, nutAF: 10, nutH: 5, washerT: 1.6 };
   const STRIP = { wpm: 4.8, cut: 50, v: 12, perM: 60 }; // лента 12 В, 60 LED/м: ~4,8 Вт/м, резать через 50 мм
@@ -71,6 +71,13 @@
     enlSpringD: 25, // внутренний диаметр пружины постоянного усилия
     enlLed: 'strip',
     enlLedPitch: 15, // шаг рядов ленты / светодиодов панели
+    // покупной лайтбокс (световой планшет) лицом вниз: корпус Ш (X) × Г (Z) × толщина, светящееся окно, его утопленность
+    enlBoxW: 137,
+    enlBoxD: 165,
+    enlBoxT: 45,
+    enlBoxWinW: 95,
+    enlBoxWinD: 105,
+    enlBoxRecess: 2,
   };
 
   /** Проверка значений увеличителя (общая нормализация чисел и строк — в camera.js). */
@@ -89,6 +96,12 @@
     p.enlEasel = Math.max(0, p.enlEasel);
     p.enlSpringD = Math.max(10, Math.min(60, p.enlSpringD));
     p.enlLedPitch = Math.max(3, Math.min(40, p.enlLedPitch));
+    p.enlBoxW = Math.max(40, Math.min(320, p.enlBoxW));
+    p.enlBoxD = Math.max(40, Math.min(320, p.enlBoxD));
+    p.enlBoxT = Math.max(5, Math.min(120, p.enlBoxT));
+    p.enlBoxWinW = Math.max(10, Math.min(p.enlBoxW - 4, p.enlBoxWinW));
+    p.enlBoxWinD = Math.max(10, Math.min(p.enlBoxD - 4, p.enlBoxWinD));
+    p.enlBoxRecess = Math.max(0, Math.min(15, p.enlBoxRecess));
     return p;
   }
 
@@ -111,6 +124,7 @@
     colCapT: 5, skirtH: 10, // заглушка колонны
     sock: 6, sockH: 40, Tbb: 8, jack: 2, // кронштейн доски: стенки гнезда, его высота, фланец, ход юстировочных винтов
     knobF: 36, knobFH: 14, // маховик фокусировки
+    boxWall: 3, felt: 1, // ложемент лайтбокса: стенки, чёрный фетр под лицевой стороной
     padX: 3.1, // толщина тормозной колодки
   };
   const PAD = { y: 25, z: 15 };
@@ -211,7 +225,9 @@
     // --- оптика и мех
     const slotH = EK.tLb + EK.tLt + EK.play + c;
     const Fst = EK.Tl + 2 * K.tPlate + EK.Tnb + EK.tLb - EK.rec; // от фланца объектива до плёнки сверх растяжения меха
-    const g = slotH + EK.Tr + EK.ledgeH - (EK.tLb - EK.rec); // от плёнки до рассеивателя
+    const isBox = cp.enlLed === 'lightbox';
+    // от плёнки до рассеивателя: свой (на уступе корпуса) или лайтбокса (дно ложемента, фетр, утопленное окно)
+    const g = slotH + EK.Tr + (isBox ? EK.flangeT + EK.felt + cp.enlBoxRecess : EK.ledgeH) - (EK.tLb - EK.rec);
     const eNeed = [opt(f, mMax).u - Fst, opt(f, mMin).u - Fst];
     const eMinB = Math.ceil(Math.max(d.minFrame, R.bfF.lipLen + R.bfR.lipLen + 2));
     const eMaxB = bp.maxExt;
@@ -224,15 +240,29 @@
     const eAt = (m) => Math.max(eLo, Math.min(eHi, opt(f, m).u - Fst));
 
     // --- свет
-    const light = lightCalc(frame, opt(f, mMax).u, g, cp.enlLedPitch, cp.enlLed);
-    if (light.U < EK.Uok) warnings.push(tr('enl.warn.light', { u: Math.round(light.U * 100) }));
-    const aNeed = light.aNeed, a = light.a;
-    const Hb = EK.ledgeH + EK.diffT + 0.4 + light.H;
-    const led = ledCalc(a, cp);
+    let light, aNeed = null, a = null, Hb, led = null, open, boxIn = null;
+    if (isBox) {
+      // лайтбокс: окно задано; поле, которое должно светиться, — кадр с поправкой на ход лучей и запасом по краю
+      const k = 1 + g / opt(f, mMax).u;
+      const need = [frame[0] * k + 2 * EK.mixMargin, frame[1] * k + 2 * EK.mixMargin];
+      open = [cp.enlBoxWinW, cp.enlBoxWinD];
+      light = { box: true, k, need, ok: need[0] <= open[0] + 1e-9 && need[1] <= open[1] + 1e-9 };
+      if (!light.ok) warnings.push(tr('enl.warn.boxSmall', { w: num(open[0]), d: num(open[1]), nw: Math.ceil(need[0]), nd: Math.ceil(need[1]) }));
+      boxIn = [cp.enlBoxW / 2 + c, cp.enlBoxD / 2 + c]; // внутренний контур ложемента
+      Hb = EK.flangeT + Math.max(12, Math.min(30, cp.enlBoxT - 8)); // стенки не выше корпуса лайтбокса
+    } else {
+      light = lightCalc(frame, opt(f, mMax).u, g, cp.enlLedPitch, cp.enlLed);
+      if (light.U < EK.Uok) warnings.push(tr('enl.warn.light', { u: Math.round(light.U * 100) }));
+      aNeed = light.aNeed; a = light.a;
+      Hb = EK.ledgeH + EK.diffT + 0.4 + light.H;
+      led = ledCalc(a, cp);
+      open = [aNeed, aNeed];
+    }
 
     // --- в плане
-    const Wc = aNeed + 2 * EK.ov, slotHalf = Wc / 2 + c;
-    const Su = Math.ceil(Math.max(Sr, 2 * (slotHalf + EK.Ww), a + 22));
+    const Wc = open[0] + 2 * EK.ov, slotHalf = Wc / 2 + c;
+    const Su = Math.ceil(Math.max(Sr, 2 * (slotHalf + EK.Ww), open[1] + 2 * (EK.ov + EK.Wb) + 2,
+      isBox ? 2 * (Math.max(...boxIn) + EK.boxWall) + 2 : a + 22));
     const col = COLUMNS[cp.enlColumn], hw = col[0] / 2 + c, hd = col[1] / 2 + c;
     const zT0 = -Su / 2 - EK.tailL; // начало хвостов плит у колонны
     const zCC = zT0 - c - EK.cw - hd; // ось колонны
@@ -242,14 +272,20 @@
     const zLe = -(board.h / 2 + c + 4); // язык нижней полки — до кармана платы
     const lev = [[-xB, zT0 + 8], [xB, zT0 + 8], [0, zLe - 6]]; // три точки юстировки объективной рамки
     const padH = 2 * H.FW.M3; // две шайбы M3 — прокладки юстировки
-    const bossC = a / 2 + 4.5, cornerR = Sr / 2 - K.corner;
-    const xw = slotHalf + EK.Ww / 2;
-    let zw = Su / 4, best = -1;
-    for (let z = 12; z <= Su / 2 - 8; z += 0.5) { // винты столика — подальше от бобышек осветителя и винтов рамки меха
-      const dm = Math.min(Math.hypot(xw - bossC, z - bossC), Math.hypot(xw - cornerR, z - cornerR));
-      if (dm > best + 1e-9) { best = dm; zw = z; }
+    const bossC = isBox ? null : a / 2 + 4.5, cornerR = Sr / 2 - K.corner;
+    // винты столика — над стенками паза, подальше от бобышек осветителя и винтов рамки меха;
+    // у лайтбокса — не под стенками ложемента (головка винта утоплена в дно, сверху ложится лайтбокс или ничего)
+    const underWall = (x, z) => isBox && ((Math.abs(x) > boxIn[0] - 3.5 && Math.abs(x) < boxIn[0] + EK.boxWall + 3.5 && Math.abs(z) < boxIn[1] + EK.boxWall + 3.5) ||
+      (Math.abs(z) > boxIn[1] - 3.5 && Math.abs(z) < boxIn[1] + EK.boxWall + 3.5 && Math.abs(x) < boxIn[0] + EK.boxWall + 3.5));
+    let xw = slotHalf + EK.Ww / 2, zw = Su / 4, best = -Infinity;
+    for (let x = slotHalf + 3.5; x <= Su / 2 - 3.5 + 1e-9; x += 0.5) for (let z = 12; z <= Su / 2 - 8; z += 0.5) {
+      const dm = Math.min(Math.hypot(x - cornerR, z - cornerR), isBox ? Infinity : Math.hypot(x - bossC, z - bossC));
+      // зазор до соседних отверстий ≥ 10 мм, дальше — шире расставить винты (прижим по углам), ближе к середине стенки
+      const score = (underWall(x, z) ? -1000 : 0) + 10 * Math.min(dm, 10) + 0.2 * z - 0.3 * Math.abs(x - (slotHalf + EK.Ww / 2));
+      if (score > best + 1e-9) { best = score; xw = x; zw = z; }
     }
-    const gc = a / 2 + EK.wall / 2; // ось кольца светового замка
+    // ось кольца светового замка (крыша столика ↔ осветитель или ложемент)
+    const gc = isBox ? [open[0] / 2 + 4.5, open[1] / 2 + 4.5] : [a / 2 + EK.wall / 2, a / 2 + EK.wall / 2];
 
     // --- компенсация веса: барабан пружины или блок противовеса под заглушкой колонны (координаты от оси колонны)
     const zAnch = -(hd + EK.cwR / 2);
@@ -269,7 +305,7 @@
       const yNB = yL + EK.Tl + 2 * K.tPlate + e, yS = yNB + EK.Tnb, yRT = yS + slotH + EK.Tr;
       return {
         m, u: o.u, v: o.v, e, yL, yNB, yS, yN: yS + EK.tLb - EK.rec, yRT,
-        yTop: yRT + Hb + EK.ledT + EK.ventGap + EK.capTop,
+        yTop: isBox ? yRT + EK.flangeT + EK.felt + cp.enlBoxT : yRT + Hb + EK.ledT + EK.ventGap + EK.capTop,
         hcBot: yNB - EK.Ts, hcTop: yNB - EK.Ts + EK.Hh, lcTop: yL - padH, lcBot: yL - padH - EK.Hl,
       };
     };
@@ -281,7 +317,7 @@
     const colBot = EK.jack + EK.Tbb, sockTop = colBot + EK.sockH;
 
     // масса головки (всё, что едет по колонне) — для пружины и противовеса
-    const D0 = { Su, Sf, Sr, a, aNeed, Wc, slotH, Hb, Wtail, zT0, zCC, hw, hd, frame, board, R, bm, mount, zLe, c };
+    const D0 = { Su, Sf, Sr, a, aNeed, open, isBox, boxIn, cp, Wc, slotH, Hb, Wtail, zT0, zCC, hw, hd, frame, board, R, bm, mount, zLe, c };
     const mass = massEstimate(D0);
     let wb = null;
     if (BG && BG.kind === 'weight') {
@@ -327,7 +363,7 @@
 
     const D = {
       style: 'enlarger', c, F, frame, diag, f, mount, mMin, mMax, slotH, Fst, g, eNeed, eMinB, eMaxB, eLo, eHi,
-      light, aNeed, a, Hb, led, Wc, slotHalf, Su, Sf, Sr, board, R, col, hw, hd, zT0, zCC, xS, zS, xB, zB, Wtail, zLe, lev, padH,
+      light, aNeed, a, Hb, led, open, isBox, boxIn, Wc, slotHalf, Su, Sf, Sr, board, R, col, hw, hd, zT0, zCC, xS, zS, xB, zB, Wtail, zLe, lev, padH,
       bossC, xw, zw, gc, BG, zAnch, stopLocal, colBot, sockTop, colL, colNeed, colTop, mass, wb, spring,
       flX, flZB, flZF, boardW, boardD, boardZ0, rodL: 0, travel: eHi - eLo,
       eMin: mMin, eMax: mMax, // ползунок сцены — увеличение
@@ -356,17 +392,18 @@
 
   /** Масса головки (всё, что едет по колонне), г: пластик по упрощённым объёмам + покупное. */
   function massEstimate(D) {
-    const K = H.K, { Su, Sf, Sr, a, aNeed, Wc, slotH, Hb, Wtail, zT0, hw, hd, frame, board, R, bm, mount, zLe } = D;
+    const K = H.K, { Su, Sf, Sr, a, open, isBox, boxIn, cp, Wc, slotH, Hb, Wtail, zT0, hw, hd, frame, board, R, bm, mount, zLe } = D;
     const blockA = 2 * (hw + EK.cw) * (2 * hd + EK.cw + EK.cwR) - 4 * hw * hd;
     const v = {
       head_carriage: blockA * EK.Hh + Wtail * EK.tailL * EK.Ts,
       lens_carriage: blockA * EK.Hl + (Wtail * (-Sf / 2 - zT0) + 24 * (zLe + Sf / 2)) * EK.Ts,
       neg_base: (Su * Su + Wtail * EK.tailL - (frame[0] + 4) * (frame[1] + 4)) * EK.Tnb,
-      neg_stage: Su * Su * (slotH + EK.Tr) - 2 * (Wc / 2) * (Su - EK.Wb) * slotH - aNeed * aNeed * EK.Tr,
+      neg_stage: Su * Su * (slotH + EK.Tr) - 2 * (Wc / 2) * (Su - EK.Wb) * slotH - open[0] * open[1] * EK.Tr,
       carrier: Wc * Su * (EK.tLb + EK.tLt) + (Wc + 18) * (slotH + EK.Tr) * EK.capT,
-      lamp_body: ((a + 6) ** 2 - a * a) * Hb + (Su * Su - (a + 6) ** 2) * EK.flangeT + (a * a - aNeed * aNeed) * EK.ledgeH,
-      led_plate: (a + 18) ** 2 * EK.ledT,
-      vent_cap: (a + 18) ** 2 * EK.capTop + 4 * (a + 18) * EK.skirt * EK.ventGap,
+      lamp: isBox
+        ? (Su * Su - open[0] * open[1]) * EK.flangeT + 4 * (boxIn[0] + boxIn[1] + 2 * EK.boxWall) * EK.boxWall * (Hb - EK.flangeT)
+        : ((a + 6) ** 2 - a * a) * Hb + (Su * Su - (a + 6) ** 2) * EK.flangeT + (a * a - open[0] * open[1]) * EK.ledgeH +
+          (a + 18) ** 2 * (EK.ledT + EK.capTop) + 4 * (a + 18) * EK.skirt * EK.ventGap,
       lens_frame: (Sf * Sf + Wtail * (-Sf / 2 - zT0) - R.boardOpen[0] * R.boardOpen[1]) * EK.Tl,
       lens_board: board.w * board.h * K.tBoard,
       bellows_frames: (Sf * Sf + Sr * Sr - R.bfF.lipW * R.bfF.lipH - R.bfR.lipW * R.bfR.lipH) * K.tPlate,
@@ -374,7 +411,9 @@
     };
     const plasticVol = Object.values(v).reduce((s, x) => s + x, 0);
     const plastic = plasticVol * 1.27e-3 * 0.6;
-    const bought = mount.g + a * a * EK.diffT * 1.19e-3 + 40 + 60 + (bm.derived.fabricArea / 1e6) * 500;
+    // лайтбокс — пластиковый корпус с платой: ~0,3 г/см³ по габариту; иначе — рассеиватель и лента
+    const light = isBox ? cp.enlBoxW * cp.enlBoxD * cp.enlBoxT * 0.3e-3 : a * a * EK.diffT * 1.19e-3 + 40;
+    const bought = mount.g + light + 60 + (bm.derived.fabricArea / 1e6) * 500;
     return { plastic: Math.round(plastic), bought: Math.round(bought), total: Math.round(plastic + bought) };
   }
 
@@ -401,7 +440,13 @@
     const L = [];
     const add = (key, name, qty, color, build, printT, note) => L.push({ key, name, qty, color, build, printT: printT || M.I(), note: note || '' });
     const yUp = M.Rx(90), yDown = M.Rx(-90);
-    const { Su, Sf, a, aNeed, Wc, slotH, slotHalf, Hb, Wtail, zT0, zCC, hw, hd, xS, zS, xB, zB, frame, board, BG } = D;
+    const { Su, Sf, a, aNeed, open, Wc, slotH, slotHalf, Hb, Wtail, zT0, zCC, hw, hd, xS, zS, xB, zB, frame, board, BG } = D;
+    const [gx, gz] = D.gc;
+    /** Канавка кольца светового замка (прямоугольное кольцо по оси gx × gz) на высоте y0…y1. */
+    const sealGroove = (y0, y1) => {
+      const w2 = (EK.sealW + 2 * c) / 2;
+      return box(-(gx + w2), y0, -(gz + w2), gx + w2, y1, gz + w2).subtract(box(-(gx - w2), y0 - 1, -(gz - w2), gx - w2, y1 + 1, gz - w2));
+    };
     const xo = hw + EK.cw, zf = hd + EK.cw, zr = -(hd + EK.cwR);
     const fx = frame[0], fz = frame[1];
     const corners = (S) => [[1, 1], [-1, 1], [1, -1], [-1, -1]].map(([sx, sz]) => [sx * (S / 2 - K.corner), sz * (S / 2 - K.corner)]);
@@ -494,11 +539,10 @@
     add('neg_stage', tr('part.enl_neg_stage'), 1, COL.frame, () => {
       let s = prismXZ(rectXZ(-Su / 2, -Su / 2, Su / 2, Su / 2, 5, 6), 0, Ht, 0.6, 1);
       s = s.unionAll([ridgeX(yr, z1, 2, -xr - 2, xr + 2), ridgeY(-xr, z1, 2, 0, yr), ridgeY(xr, z1, 2, 0, yr)]);
-      const w2 = (EK.sealW + 2 * c) / 2;
       const cuts = [
         box(-slotHalf, -1, -Su / 2 + EK.Wb, slotHalf, slotH, Su / 2 + 3),
-        box(-aNeed / 2, slotH - 1, -aNeed / 2, aNeed / 2, Ht + 1, aNeed / 2),
-        box(-(D.gc + w2), Ht - EK.sealD, -(D.gc + w2), D.gc + w2, Ht + 1, D.gc + w2).subtract(box(-(D.gc - w2), Ht - EK.sealD - 1, -(D.gc - w2), D.gc - w2, Ht + 2, D.gc - w2)),
+        box(-open[0] / 2, slotH - 1, -open[1] / 2, open[0] / 2, Ht + 1, open[1] / 2),
+        sealGroove(Ht - EK.sealD, Ht + 1),
       ];
       for (const [sx, sz] of sgn4) cuts.push(cylY(-1, Ht + 1, sx * D.xw, sz * D.zw, HW.M3.hole));
       return s.subtractAll(cuts);
@@ -536,21 +580,38 @@
 
     // --- Кольцо светового замка: лежит в канавках крыши столика и дна осветителя
     add('seal_ring', tr('part.enl_seal'), 1, COL.frame, () => {
-      const o = D.gc + EK.sealW / 2, i = D.gc - EK.sealW / 2;
-      return box(-o, 0, -o, o, EK.sealH, o).subtract(box(-i, -1, -i, i, EK.sealH + 1, i));
+      const o = EK.sealW / 2;
+      return box(-(gx + o), 0, -(gz + o), gx + o, EK.sealH, gz + o).subtract(box(-(gx - o), -1, -(gz - o), gx - o, EK.sealH + 1, gz - o));
     }, yUp);
 
+    if (D.isBox) {
+      // --- Ложемент лайтбокса: дно на крыше столика (кольцо светового замка, винты столика), стенки по корпусу, вырезы под провод
+      add('box_cradle', tr('part.enl_cradle', { w: cp.enlBoxW, d: cp.enlBoxD }), 1, COL.back, () => {
+        const [bx, bz] = D.boxIn, t = EK.boxWall, fl = Su / 2 - 1, T = EK.flangeT;
+        let s = prismXZ(rectXZ(-fl, -fl, fl, fl, 5, 6), 0, T, 0.6, 1);
+        s = s.union(prismXZ(rectXZ(-bx - t, -bz - t, bx + t, bz + t, 3, 4), T - 0.5, Hb, 0, 0.8)
+          .subtract(prismXZ(rectXZ(-bx, -bz, bx, bz, 2, 3), T - 1, Hb + 1)));
+        const cuts = [box(-open[0] / 2, -1, -open[1] / 2, open[0] / 2, T + 1, open[1] / 2), sealGroove(-1, EK.sealD)];
+        for (const [ax, w] of [[0, bx], [1, bz]]) for (const sg of [-1, 1]) { // вырезы в стенках: провод и пальцы
+          const lo = [-9, T + 8, -9], hi = [9, Hb + 1, 9];
+          lo[ax === 0 ? 0 : 2] = sg > 0 ? w - 1 : -w - t - 1; hi[ax === 0 ? 0 : 2] = sg > 0 ? w + t + 1 : -w + 1;
+          cuts.push(box(...lo, ...hi));
+        }
+        for (const [sx, sz] of sgn4) cuts.push(cylY(-1, T + 1, sx * D.xw, sz * D.zw, HW.M3.hole), cylY(T - HW.M3.cbH, T + 1, sx * D.xw, sz * D.zw, HW.M3.cbD));
+        return s.subtractAll(cuts);
+      }, yUp, tr('part.note.flangeDown'));
+    }
+
     // --- Осветитель: камера смешения (белая внутри), уступ под рассеиватель, бобышки для светодиодной плиты
-    add('lamp_body', tr('part.enl_lamp'), 1, COL.back, () => {
+    if (!D.isBox) add('lamp_body', tr('part.enl_lamp'), 1, COL.back, () => {
       const ao = a / 2 + EK.wall, fl = Su / 2 - 1;
       let s = prismXZ(rectXZ(-ao, -ao, ao, ao, 3, 4), 0, Hb, 0.6, 1);
       s = s.union(prismXZ(rectXZ(-fl, -fl, fl, fl, 5, 6), 0, EK.flangeT, 0.6, 1));
       s = s.unionAll(sgn4.map(([sx, sz]) => CSG.cylinder([sx * D.bossC, 0, sz * D.bossC], [sx * D.bossC, Hb, sz * D.bossC], 4.5, 32)));
-      const w2 = (EK.sealW + 2 * c) / 2;
       const cuts = [
         box(-a / 2, EK.ledgeH, -a / 2, a / 2, Hb + 1, a / 2),
         box(-aNeed / 2, -1, -aNeed / 2, aNeed / 2, EK.ledgeH + 0.01, aNeed / 2),
-        box(-(D.gc + w2), -1, -(D.gc + w2), D.gc + w2, EK.sealD, D.gc + w2).subtract(box(-(D.gc - w2), -2, -(D.gc - w2), D.gc - w2, EK.sealD + 1, D.gc - w2)),
+        sealGroove(-1, EK.sealD),
       ];
       for (const [sx, sz] of sgn4) {
         cuts.push(cylY(Hb - 10, Hb + 1, sx * D.bossC, sz * D.bossC, HW.M3.selfTap));
@@ -560,8 +621,8 @@
     }, yUp, tr('part.note.flangeDown'));
 
     // --- Светодиодная плита: ряды ленты снизу, щели вентиляции у краёв, отверстие под провод
-    const po = a / 2 + 9;
-    add('led_plate', tr('part.enl_led_plate'), 1, COL.plate, () => {
+    const po = D.isBox ? 0 : a / 2 + 9;
+    if (!D.isBox) add('led_plate', tr('part.enl_led_plate'), 1, COL.plate, () => {
       const s = prismXZ(rectXZ(-po, -po, po, po, 4, 6), 0, EK.ledT, 0.5, 0.8);
       const cuts = [cylY(-1, EK.ledT + 1, -(a / 2 - 6), 0, 5)];
       for (const [x, len] of ventSlots(a)) for (const sz of [-1, 1]) cuts.push(H.slot('y', -1, EK.ledT + 1, x, sz * (a / 2 - 5), len, 3));
@@ -570,7 +631,7 @@
     }, yUp, tr('part.note.flat'));
 
     // --- Крышка-лабиринт: юбка по периметру, выходные щели в середине — далеко от щелей плиты (прямого луча нет)
-    add('vent_cap', tr('part.enl_vent_cap'), 1, COL.back, () => {
+    if (!D.isBox) add('vent_cap', tr('part.enl_vent_cap'), 1, COL.back, () => {
       const Hc = EK.ventGap + EK.capTop, pi = po - EK.skirt;
       let s = prismXZ(rectXZ(-po, -po, po, po, 4, 6), EK.ventGap, Hc, 0, 1);
       s = s.union(prismXZ(rectXZ(-po, -po, po, po, 4, 6), 0, EK.ventGap + 0.5, 0.5, 0).subtract(box(-pi, -1, -pi, pi, EK.ventGap + 1, pi)));
@@ -696,6 +757,7 @@
       carrier_top: [T(0, s.yS + EK.tLb, 0)],
       seal_ring: [T(0, s.yRT - EK.sealD + 0.1, 0)],
       lamp_body: [T(0, s.yRT, 0)],
+      box_cradle: [T(0, s.yRT, 0)],
       led_plate: [T(0, s.yRT + D.Hb, 0)],
       vent_cap: [T(0, s.yRT + D.Hb + EK.ledT, 0)],
       lens_frame: [T(0, s.yL, 0)],
@@ -790,7 +852,7 @@
       add('eLatch', Object.assign({ p: at(mm, [0, 0, t + FW.M3]), d: dirOf(mm, [0, 0, -1]), washer: FW.M3 }, tapM3(s0, s0 + 8, -0.5)));
     }
     // светодиодная плита и крышка: винт из цековки крышки через стойку и плиту в бобышку корпуса
-    for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    if (!D.isBox) for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
       const top = s.yRT + D.Hb + EK.ledT + EK.ventGap + EK.capTop, s0 = EK.ventGap + EK.capTop - HW.M3.cbH + EK.ledT;
       add('eLed', Object.assign({ p: [sx * D.bossC, top - HW.M3.cbH, sz * D.bossC], d: [0, -1, 0] }, tapM3(s0, s0 + 10, -0.5)));
     }
@@ -871,12 +933,18 @@
       { name: tr('hw.e.rod', { len: D.rodL }), qty: 1, note: tr('hw.e.rodNote', { travel: Math.round(D.travel) }) },
       { name: tr('hw.e.nut6'), qty: 4, note: tr('hw.e.nut6Note') },
       { name: tr('hw.washer', { size: 'M6' }), qty: 1, note: tr('hw.e.w6Note') },
-      { name: tr('hw.e.diffuser', { a: Math.floor(D.a - 0.6), t: num(EK.diffT) }), qty: 1, note: tr('hw.e.diffuserNote') },
-      led.panel
-        ? { name: tr('hw.e.panel', { a: Math.floor(D.a), p: led.P }), qty: 1, note: tr('hw.e.panelNote') }
-        : { name: tr('hw.e.strip', { len: num(led.L / 1000, 2) }), qty: 1, note: tr('hw.e.stripNote', { rows: led.rows, row: led.rowL, p: num(led.P), i: num(led.I) }) },
-      { name: tr('hw.e.psu', { a: led.psu }), qty: 1, note: tr('hw.e.psuNote') },
-      { name: tr('hw.e.dimmer'), qty: 1, note: tr('hw.e.dimmerNote') },
+      ...(D.isBox ? [
+        { name: tr('hw.e.lightbox', { w: num(cp.enlBoxW), d: num(cp.enlBoxD), t: num(cp.enlBoxT) }), qty: 1, note: tr('hw.e.lightboxNote', { ww: num(cp.enlBoxWinW), wd: num(cp.enlBoxWinD) }) },
+        { name: tr('hw.e.felt'), qty: 1, note: tr('hw.e.feltNote', { len: Math.ceil(2 * (cp.enlBoxWinW + cp.enlBoxWinD) + 40) }) },
+        { name: tr('hw.e.boxTimer'), qty: 1, note: tr('hw.e.boxTimerNote') },
+      ] : [
+        { name: tr('hw.e.diffuser', { a: Math.floor(D.a - 0.6), t: num(EK.diffT) }), qty: 1, note: tr('hw.e.diffuserNote') },
+        led.panel
+          ? { name: tr('hw.e.panel', { a: Math.floor(D.a), p: led.P }), qty: 1, note: tr('hw.e.panelNote') }
+          : { name: tr('hw.e.strip', { len: num(led.L / 1000, 2) }), qty: 1, note: tr('hw.e.stripNote', { rows: led.rows, row: led.rowL, p: num(led.P), i: num(led.I) }) },
+        { name: tr('hw.e.psu', { a: led.psu }), qty: 1, note: tr('hw.e.psuNote') },
+        { name: tr('hw.e.dimmer'), qty: 1, note: tr('hw.e.dimmerNote') },
+      ]),
       { name: tr('hw.e.lens', { f: D.f, mount: D.mount.name }), qty: 1, note: '' },
       { name: tr('hw.e.wood'), qty: D.woods.length, note: tr('hw.e.woodNote') },
       { name: tr('hw.e.board', { w: D.boardW, d: D.boardD }), qty: 1, note: tr('hw.e.boardNote') },
@@ -907,6 +975,15 @@
       g.push(box(w / 2 - 1.8, y0 - 1, z - 3, w / 2 + 1, y1 + 1, z + 3), box(-w / 2 - 1, y0 - 1, z - 3, -w / 2 + 1.8, y1 + 1, z + 3));
     }
     return s.subtractAll(g);
+  }
+
+  /** Лайтбокс (покупной) лицом вниз в ложементе — для показа и проверки столкновений; null, если свет свой. */
+  function boxDummy(enl, m) {
+    const D = enl.dims, cp = enl.params;
+    if (!D.isBox) return null;
+    const s = D.st(m), y0 = s.yRT + EK.flangeT + EK.felt;
+    // углы корпуса скруглены (у ложемента внутренний радиус меньше — 2 мм)
+    return prismXZ(rectXZ(-cp.enlBoxW / 2, -cp.enlBoxD / 2, cp.enlBoxW / 2, cp.enlBoxD / 2, 4, 4), y0, y0 + cp.enlBoxT);
   }
 
   function lensDummy(enl, m) {
@@ -951,8 +1028,13 @@
     doc.text(tr('rd.e.optics', { umax: r(sMin.u), umin: r(sMax.u), vmin: r(sMin.v), vmax: r(sMax.v) }));
     doc.text(tr('rd.e.ext', { emin: r(D.eNeed[0]), emax: r(D.eNeed[1]), fst: num(D.Fst, 1), bmin: D.eMinB, bmax: r(D.eMaxB) }));
     doc.text(tr('rd.e.column', { len: D.colL, travel: r(Math.max(...[sMin, sMax].map((s) => s.hcBot)) - Math.min(sMin.hcBot, sMax.hcBot)), rod: D.rodL, turns: r(D.travel) }));
-    doc.text(tr('rd.e.light', { a: D.aNeed, h: D.light.H, g: num(D.g, 1), k: num(D.light.k, 3), u: r(D.light.U * 100), d: Math.floor(D.a - 0.6) }));
-    doc.text(tr('rd.e.ripple', { r: num(D.light.ripple, 2), p: num(Math.round(Math.max(p.enlLedPitch, D.light.pAlong) * 10) / 10) }));
+    if (D.isBox) {
+      doc.text(tr('rd.e.lightBox', { w: num(p.enlBoxW), d: num(p.enlBoxD), t: num(p.enlBoxT), ww: num(p.enlBoxWinW), wd: num(p.enlBoxWinD),
+        nw: Math.ceil(D.light.need[0]), nd: Math.ceil(D.light.need[1]), k: num(D.light.k, 3), g: num(D.g, 1) }));
+    } else {
+      doc.text(tr('rd.e.light', { a: D.aNeed, h: D.light.H, g: num(D.g, 1), k: num(D.light.k, 3), u: r(D.light.U * 100), d: Math.floor(D.a - 0.6) }));
+      doc.text(tr('rd.e.ripple', { r: num(D.light.ripple, 2), p: num(Math.round(Math.max(p.enlLedPitch, D.light.pAlong) * 10) / 10) }));
+    }
     doc.text(tr('rd.e.mass', { g: D.mass.total }));
     for (const w of enl.warnings) doc.text('! ' + w);
     doc.blank();
@@ -970,14 +1052,17 @@
     doc.para(tr('rd.e.lensStage', { level: n('eLevel'), bfF: n('eBfF'), latch: n('eLatch') }));
     doc.para(tr('rd.e.negStage', { arm: n('eArm'), bfR: n('eBfR'), stage: n('eStage') }));
     doc.para(tr('rd.e.focus', { rod: D.rodL }));
-    doc.para(tr('rd.e.lamp', { led: n('eLed'), d: Math.floor(D.a - 0.6) }));
+    doc.para(D.isBox ? tr('rd.e.lampBox', { stage: n('eStage') }) : tr('rd.e.lamp', { led: n('eLed'), d: Math.floor(D.a - 0.6) }));
     doc.para(F.sheet ? tr('rd.e.carrierSheet') : tr('rd.e.carrier', { n: Math.max(1, Math.floor((D.Su - EK.Wb - 2) / F.pitch)) }));
     if (D.BG) doc.para(tr(D.BG.kind === 'spring' ? 'rd.e.springAsm' : 'rd.e.weightAsm', { drum: n('eDrum'), tape: n('eTape'), pulley: n('ePulley'), lid: n('eWLid') }));
     doc.blank();
     doc.head(`3. ${tr('rd.e.h.led')}`);
-    if (D.led.panel) doc.para(tr('rd.e.ledPanel', { p: D.led.P, i: num(D.led.I), psu: D.led.psu }));
-    else doc.para(tr('rd.e.ledStrip', { rows: D.led.rows, row: D.led.rowL, pitch: num(p.enlLedPitch), p: num(D.led.P), i: num(D.led.I), psu: D.led.psu }));
-    doc.para(tr('rd.e.ledSafety'));
+    if (D.isBox) doc.para(tr('rd.e.ledBox'));
+    else {
+      if (D.led.panel) doc.para(tr('rd.e.ledPanel', { p: D.led.P, i: num(D.led.I), psu: D.led.psu }));
+      else doc.para(tr('rd.e.ledStrip', { rows: D.led.rows, row: D.led.rowL, pitch: num(p.enlLedPitch), p: num(D.led.P), i: num(D.led.I), psu: D.led.psu }));
+      doc.para(tr('rd.e.ledSafety'));
+    }
     doc.blank();
     doc.head(`4. ${tr('rd.h.adjust')}`);
     doc.para(tr('rd.e.adjust1', { jack: n('eJack') }));
@@ -1024,7 +1109,7 @@
 
   return {
     ENL_FORMATS, ENL_MOUNTS, COLUMNS, PRINTS, BALANCE, LEDS, ENL_DEFAULTS, EK, FX_KEYS, SPRING_N, M6,
-    init, normalize, computeEnlarger, placements, fastenerLayout, assemblyText, columnCSG, lensDummy, bellowsOrigin,
+    init, normalize, computeEnlarger, placements, fastenerLayout, assemblyText, columnCSG, lensDummy, boxDummy, bellowsOrigin,
     sceneExtras, lightCalc, irradiance, magFit, tableRows, weightBoxY,
   };
 });
