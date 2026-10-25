@@ -11,7 +11,7 @@ const ph = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().
 const ROOT = path.join(__dirname, '..');
 
 test('код использует только ключи из словаря', () => {
-  const src = ['js/app.js', 'js/geometry.js', 'js/exporters.js', 'js/camera.js'].map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+  const src = ['js/app.js', 'js/geometry.js', 'js/exporters.js', 'js/camera.js', 'js/enlarger.js'].map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   const keys = new Set();
   for (const m of src.matchAll(/\btr?\(\s*'([a-zA-Z0-9_.]+)'/g)) keys.add(m[1]);
@@ -31,6 +31,11 @@ test('код использует только ключи из словаря', 
   for (const x of ['A', 'B', 'C', 'D']) keys.add('panel.' + x);
   for (const x of ['frontW', 'frontH', 'rearW', 'rearH', 'maxExt', 'pitch', 'tStiff', 'collarF', 'collarR', 'hingeGap', 'cornerGap', 'flap', 'tOuter', 'tLining', 'reserve']) keys.add('geo.param.' + x);
   for (const x of require('../js/camera.js').FX_KEYS) keys.add('fx.' + x);
+  const Enl = require('../js/enlarger.js');
+  for (const x of Enl.FX_KEYS) keys.add('fx.' + x);
+  for (const x of Enl.BALANCE) keys.add('rd.e.balance.' + x);
+  for (const x of ['enl_cap_spring', 'enl_cap_pulley', 'enl_cap']) keys.add('part.' + x);
+  for (const x of ['mag', 'img', 'lens', 'carriage', 'ext', 'turns']) keys.add('rd.e.col.' + x);
   for (const x of ['tilt', 'pivot', 'feet', 'hinge']) keys.add('hw.w.' + x);
   const missing = [...keys].filter((k) => !k.endsWith('.') && !(k in ru));
   assert.deepEqual(missing, []);
@@ -83,6 +88,19 @@ test('экспорт на английском и польском — без р
           ...Object.values(C.STYLES).map((x) => x.name), ...Object.values(C.BOARDS).map((x) => x.name), ...Object.values(C.RAILS).map((x) => x.name),
         ];
         for (const tx of texts) assert.ok(!cyr.test(tx), `${code}: ${String(tx).match(/.{0,40}[А-Яа-яЁё].{0,40}/)}`);
+      }
+      // увеличитель: все три способа компенсации веса, с предупреждениями (короткие мех и колонна, f 50)
+      const E = require('../js/enlarger.js');
+      for (const [b, c] of [[{ maxExt: 200 }, { enlColumnLength: 300 }], [{}, { enlFormat: '35', enlRange: 'mag', enlMagMin: 2, enlMagMax: 12, enlBalance: 'spring', enlLed: 'panel' }], [{}, { enlFormat: '66', enlBalance: 'weight', enlMount: 'copal0' }]]) {
+        const bm = G.computeBellows(b);
+        const enl = C.computeCamera(bm, Object.assign({ camStyle: 'enlarger' }, c));
+        assert.ok(enl.ok && enl.warnings.length + 1 > 0);
+        const texts = [
+          C.assemblyText(enl, bm, [{ name: enl.parts[0].name, n: 2 }]), ...enl.warnings,
+          ...enl.parts.map((p) => p.name + p.note), ...enl.hardware.map((h) => h.name + h.note),
+          ...Object.values(E.ENL_FORMATS).map((x) => x.name), ...Object.values(E.ENL_MOUNTS).map((x) => x.name),
+        ];
+        for (const tx of texts) assert.ok(!cyr.test(tx), `${code} (увеличитель): ${String(tx).match(/.{0,40}[А-Яа-яЁё].{0,40}/)}`);
       }
       assert.ok(!cyr.test(G.computeBellows({ pitch: 0 }).errors.join(' ')));
     }

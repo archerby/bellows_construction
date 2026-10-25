@@ -119,16 +119,18 @@
             <div class="summary" id="cam-summary"></div>
             <div id="cam-messages" class="messages" aria-live="polite"></div>
             <div class="toolbar">
-              <label class="range"><span data-i18n="lbl.camExt"></span>
+              <label class="range"><span id="cam-ext-label" data-i18n="lbl.camExt"></span>
                 <input type="range" id="cam-ext" min="0" max="100" step="1">
                 <output id="cam-ext-out"></output>
               </label>
               <label class="check" id="cv-folded-wrap" hidden><input type="checkbox" id="cv-folded"> <span data-i18n="cv.folded"></span></label>
               <label class="check"><input type="checkbox" id="cv-bellows" checked> <span data-i18n="cv.bellows"></span></label>
               <label class="check"><input type="checkbox" id="cv-lens" checked> <span data-i18n="cv.lens"></span></label>
-              <label class="check"><input type="checkbox" id="cv-holder"> <span data-i18n="cv.holder"></span></label>
+              <label class="check" id="cv-holder-wrap"><input type="checkbox" id="cv-holder"> <span data-i18n="cv.holder"></span></label>
               <label class="check"><input type="checkbox" id="cv-fx"> <span data-i18n="cv.fx"></span></label>
-              <label class="check" id="cv-rail-wrap"><input type="checkbox" id="cv-rail" checked> <span data-i18n="cv.rail"></span></label>
+              <label class="check" id="cv-rail-wrap"><input type="checkbox" id="cv-rail" checked> <span id="cv-rail-label" data-i18n="cv.rail"></span></label>
+              <label class="check" id="cv-board-wrap" hidden><input type="checkbox" id="cv-board" checked> <span data-i18n="cv.board"></span></label>
+              <label class="check" id="cv-light-wrap" hidden><input type="checkbox" id="cv-light" checked> <span data-i18n="cv.light"></span></label>
               <span class="sep"></span>
               <button type="button" data-action="cam-png">PNG</button>
               <button type="button" data-action="cam-view-reset" class="ghost" data-i18n="btn.viewReset"></button>
@@ -138,7 +140,7 @@
               <canvas id="gl-cam"></canvas>
               <div class="canvas-hint" data-i18n="hint.3dNav"></div>
             </div>
-            <p class="hint cam-back-hint" data-i18n="cam.backHint"></p>
+            <p class="hint cam-back-hint" id="cam-back-hint" data-i18n="cam.backHint"></p>
             <h3 class="cam-h" data-i18n="cam.partsH"></h3>
             <div class="table-wrap"><table class="data" id="cam-parts"></table></div>
             <h3 class="cam-h" data-i18n="cam.hwH"></h3>
@@ -162,6 +164,7 @@
   <script src="js/exporters.js"></script>
   <script src="js/viewer3d.js"></script>
   <script src="js/csg.js"></script>
+  <script src="js/enlarger.js"></script>
   <script src="js/camera.js"></script>
   <script src="js/app.js"></script>
 </body>

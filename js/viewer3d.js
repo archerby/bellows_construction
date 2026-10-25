@@ -94,6 +94,7 @@
     gl.bindBuffer(gl.ARRAY_BUFFER, this.lineBuf);
     gl.bufferData(gl.ARRAY_BUFFER, data.lines, gl.STATIC_DRAW);
     this.lineCount = data.lines.length / 3;
+    this.lineColor = data.lineColor || [0.55, 0.55, 0.6, 1];
     this.radius = data.radius || 300;
     if (!keepCamera || !this.home) {
       if (this.home) { this.cam.yaw = this.home.yaw; this.cam.pitch = this.home.pitch; }
@@ -155,7 +156,7 @@
       const aPos = gl.getAttribLocation(this.lineProg, 'aPos');
       gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 12, 0);
       gl.uniformMatrix4fv(gl.getUniformLocation(this.lineProg, 'uMVP'), false, new Float32Array(mvp));
-      gl.uniform4fv(gl.getUniformLocation(this.lineProg, 'uColor'), [0.55, 0.55, 0.6, 1]);
+      gl.uniform4fv(gl.getUniformLocation(this.lineProg, 'uColor'), this.lineColor || [0.55, 0.55, 0.6, 1]);
       gl.drawArrays(gl.LINES, 0, this.lineCount);
     }
   };
