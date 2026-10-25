@@ -4,6 +4,7 @@
   const Geo = window.BellowsGeometry;
   const Ex = window.BellowsExport;
   const Cam = window.BellowsCamera;
+  const Enl = window.BellowsEnlarger;
   const CSGM = window.BellowsCSG.M;
   const I18n = window.BellowsI18n;
   const tr = I18n.t;
@@ -67,17 +68,33 @@
 
   // варианты из справочников камеры: названия берутся в момент построения формы (на текущем языке)
   const fromCam = (obj) => ({ options: Object.keys(obj), optLabel: (v) => obj[v].name });
+  const prints = { options: Object.keys(Enl.PRINTS), optLabel: (v) => tr('unit.cmPair', { a: v.split('x')[0], b: v.split('x')[1] }) };
+  // группы и поля показываются только для своих изделий (styles), диапазона (range) и компенсации веса (balance)
+  const CAMS = ['monorail', 'field'], ENL = ['enlarger'];
   const CAM_SCHEMA = [
     {
       legend: 'camType',
       fields: [
         Object.assign({ key: 'camStyle', type: 'select', hint: true }, fromCam(Cam.STYLES)),
-        { key: 'camFieldRise', hint: true },
-        { key: 'camLensFold', hint: true },
+        { key: 'camFieldRise', hint: true, styles: ['field'] },
+        { key: 'camLensFold', hint: true, styles: ['field'] },
+      ],
+    },
+    {
+      legend: 'enlNeg',
+      styles: ENL,
+      fields: [
+        { key: 'enlFormat', type: 'select', options: ['35', '645', '66', '67', '69', '4x5'] },
+        { key: 'enlRange', type: 'select', options: ['print', 'mag'], hint: true },
+        Object.assign({ key: 'enlPrintMin', type: 'select', range: 'print' }, prints),
+        Object.assign({ key: 'enlPrintMax', type: 'select', range: 'print' }, prints),
+        { key: 'enlMagMin', step: 0.1, range: 'mag' },
+        { key: 'enlMagMax', step: 0.1, range: 'mag' },
       ],
     },
     {
       legend: 'camFormat',
+      styles: CAMS,
       fields: [
         Object.assign({ key: 'camFormat', type: 'select' }, fromCam(Cam.FORMATS)),
         { key: 'camHolderW', step: 0.1, hint: true },
@@ -91,12 +108,34 @@
       fields: [
         Object.assign({ key: 'camBoard', type: 'select' }, fromCam(Cam.BOARDS)),
         { pair: ['camBoardW', 'camBoardH'] },
-        Object.assign({ key: 'camShutter', type: 'select' }, fromCam(Cam.SHUTTERS)),
-        { key: 'camShutterD', step: 0.1 },
+        Object.assign({ key: 'camShutter', type: 'select', styles: CAMS }, fromCam(Cam.SHUTTERS)),
+        { key: 'camShutterD', step: 0.1, styles: CAMS },
+        { key: 'enlMount', type: 'select', options: ['m39', 'copal0', 'copal1'], styles: ENL },
+        { key: 'enlFocal', hint: true, styles: ENL },
+      ],
+    },
+    {
+      legend: 'enlColumn',
+      styles: ENL,
+      fields: [
+        { key: 'enlColumn', type: 'select', options: ['2020', '2040', '4040'] },
+        { key: 'enlColumnLength', hint: true },
+        { key: 'enlEasel', hint: true },
+        { key: 'enlBalance', type: 'select', options: ['friction', 'spring', 'weight'], hint: true },
+        { key: 'enlSpringD', hint: true, balance: 'spring' },
+      ],
+    },
+    {
+      legend: 'enlLight',
+      styles: ENL,
+      fields: [
+        { key: 'enlLed', type: 'select', options: ['strip', 'panel'] },
+        { key: 'enlLedPitch', hint: true },
       ],
     },
     {
       legend: 'camRail',
+      styles: CAMS,
       fields: [
         Object.assign({ key: 'camRail', type: 'select' }, fromCam(Cam.RAILS)),
         { key: 'camRailLength', hint: true },
@@ -119,6 +158,7 @@
   let camera = null;
   let camViewer = null;
   let camExt = null;
+  let enlMag = null; // увеличение на ползунке сцены увеличителя
   let lastCamStyle = null;
   let model = null;
   let activeTab = 'drawing';
@@ -212,21 +252,39 @@
       const key = e.target.dataset && e.target.dataset.key;
       if (!key) return;
       params[key] = e.target.value;
-      if (!key.startsWith('cam')) $('#preset').value = '';
+      if (!key.startsWith('cam') && !key.startsWith('enl')) $('#preset').value = '';
       clearTimeout(timer);
       timer = setTimeout(update, 150);
     });
   }
 
+  /** Условия показа группы или поля: изделие, способ задания диапазона, компенсация веса. */
+  function setShowIf(el, f) {
+    if (f.styles) el.dataset.styles = f.styles.join(' ');
+    if (f.range) el.dataset.range = f.range;
+    if (f.balance) el.dataset.balance = f.balance;
+  }
+
+  function applyVisibility() {
+    const cp = Cam.normalizeCamParams(params);
+    for (const el of $$('#cam-params [data-styles], #cam-params [data-range], #cam-params [data-balance]')) {
+      const ok = (!el.dataset.styles || el.dataset.styles.split(' ').includes(cp.camStyle)) &&
+        (!el.dataset.range || el.dataset.range === cp.enlRange) && (!el.dataset.balance || el.dataset.balance === cp.enlBalance);
+      el.hidden = !ok;
+    }
+  }
+
   function buildGroups(root, schema) {
     for (const group of schema) {
       const fs = document.createElement('fieldset');
+      setShowIf(fs, group);
       const lg = document.createElement('legend');
       lg.textContent = tr('legend.' + group.legend);
       fs.appendChild(lg);
       for (const f of group.fields) {
         const row = document.createElement('div');
         row.className = 'field';
+        setShowIf(row, f);
         const label = document.createElement('label');
         label.textContent = tr('field.' + (f.key || f.pair[0]));
         row.appendChild(label);
@@ -309,6 +367,7 @@
     const cpNorm = Cam.normalizeCamParams(params);
     $('#bed-w').value = cpNorm.camBedW;
     $('#bed-h').value = cpNorm.camBedH;
+    applyVisibility();
     save();
     renderSummary();
     renderMessages();
@@ -643,6 +702,20 @@
     const kinds = camera.parts.length;
     const partsCard = card(tr('cs.parts'), count, nSplit ? tr('cs.partsSplit', { kinds, n: nSplit }) : tr('cs.partsS', { kinds }));
     const plasticCard = card(tr('cs.plastic'), `≈ ${tr('cs.grams', { g: Math.round(vol * 1.25 * 0.6) })}`, tr('cs.plasticS', { vol: Math.round(vol) }));
+    if (D.style === 'enlarger') {
+      const n2 = (x) => I18n.num(x, 2), cm = (m) => `${f1(D.frame[0] * m / 10)}×${f1(D.frame[1] * m / 10)}`;
+      $('#cam-summary').innerHTML = [
+        card(tr('cs.e.neg'), `${I18n.num(D.frame[0])}×${I18n.num(D.frame[1])}`, tr('cs.e.negS', { d: f1(D.diag) })),
+        card(tr('cs.e.lens'), `f ${D.f}`, tr('cs.e.lensS', { mount: escHtml(D.mount.name) })),
+        card(tr('cs.e.mag'), `×${n2(D.mMin)}…×${n2(D.mMax)}`, tr('cs.e.magS', { a: cm(D.mMin), b: cm(D.mMax) })),
+        card(tr('cs.e.ext'), `${Math.round(D.eNeed[0])}…${Math.round(D.eNeed[1])}`, tr('cs.e.extS', { a: D.eMinB, b: Math.round(D.eMaxB) })),
+        card(tr('cs.e.column'), `${D.colL}`, tr('cs.e.columnS', { rod: D.rodL })),
+        card(tr('cs.e.light'), `${D.aNeed}×${D.aNeed}`, tr('cs.e.lightS', { h: D.light.H, u: Math.round(D.light.U * 100) })),
+        card(tr('cs.e.head'), `${D.Su}×${D.Su}`, tr('cs.e.headS', { g: D.mass.total })),
+        partsCard, plasticCard,
+      ].join('');
+      return;
+    }
     if (D.style === 'field') {
       const fb = D.fb;
       $('#cam-summary').innerHTML = [
@@ -690,18 +763,42 @@
     if (!v) return;
     const D = camera.dims;
     const range = $('#cam-ext');
-    const lo = Math.ceil(D.eMin), hi = D.eMax;
-    range.min = lo;
-    range.max = hi;
-    if (camExt === null) camExt = Math.round(lo + (hi - lo) * 0.45);
-    camExt = Math.max(lo, Math.min(hi, camExt));
-    range.value = camExt;
-    const isField = D.style === 'field';
+    const isField = D.style === 'field', isEnl = D.style === 'enlarger';
     const folded = isField && $('#cv-folded').checked;
+    // у увеличителя ползунок — увеличение (головка и мех встают по формуле линзы), у камер — растяжение меха
+    let x;
+    if (isEnl) {
+      range.step = 0.01;
+      range.min = D.mMin;
+      range.max = D.mMax;
+      if (enlMag === null) enlMag = Math.round(Math.sqrt(D.mMin * D.mMax) * 100) / 100;
+      enlMag = Math.max(D.mMin, Math.min(D.mMax, enlMag));
+      range.value = enlMag;
+      x = enlMag;
+    } else {
+      const lo = Math.ceil(D.eMin), hi = D.eMax;
+      range.step = 1;
+      range.min = lo;
+      range.max = hi;
+      if (camExt === null) camExt = Math.round(lo + (hi - lo) * 0.45);
+      camExt = Math.max(lo, Math.min(hi, camExt));
+      range.value = camExt;
+      x = camExt;
+    }
     $('#cv-folded-wrap').hidden = !isField;
     $('#cv-rail-wrap').hidden = isField;
+    $('#cv-holder-wrap').hidden = isEnl;
+    $('#cv-board-wrap').hidden = !isEnl;
+    $('#cv-light-wrap').hidden = !isEnl;
+    for (const [id, key] of [['#cv-rail-label', isEnl ? 'cv.column' : 'cv.rail'], ['#cam-ext-label', isEnl ? 'lbl.enlMag' : 'lbl.camExt'], ['#cam-back-hint', isEnl ? 'cam.enlHint' : 'cam.backHint']]) {
+      $(id).dataset.i18n = key;
+      $(id).textContent = tr(key);
+    }
     range.disabled = folded;
-    $('#cam-ext-out').textContent = folded ? tr('cv.folded') : tr('unit.mm', { v: f1(camExt) });
+    if (isEnl) {
+      const s = D.st(x);
+      $('#cam-ext-out').textContent = tr('cv.magOut', { m: I18n.num(x, 2), w: f1(D.frame[0] * x / 10), h: f1(D.frame[1] * x / 10), e: Math.round(s.e) });
+    } else $('#cam-ext-out').textContent = folded ? tr('cv.folded') : tr('unit.mm', { v: f1(camExt) });
 
     const tris = [];
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
@@ -718,8 +815,8 @@
       for (const q of vs) for (let i = 0; i < 3; i++) { if (q[i] < min[i]) min[i] = q[i]; if (q[i] > max[i]) max[i] = q[i]; }
       for (let i = 1; i < vs.length - 1; i++) for (const q of [vs[0], vs[i], vs[i + 1]]) tris.push(q[0], q[1], q[2], n[0], n[1], n[2], col[0], col[1], col[2]);
     };
-    const holderIn = $('#cv-holder').checked;
-    const P = Cam.placements(camera, camExt, folded, { holder: holderIn });
+    const holderIn = !isEnl && $('#cv-holder').checked;
+    const P = Cam.placements(camera, x, folded, { holder: holderIn });
     for (const part of camera.parts) {
       const bodies = part.piecesLocal || [part.csg];
       for (const m of P[part.key] || []) {
@@ -737,22 +834,23 @@
       }
     }
     if ($('#cv-bellows').checked) {
-      const o = Cam.bellowsOrigin(camera, camExt, folded);
+      const o = Cam.bellowsOrigin(camera, x, folded);
       const mesh = Geo.buildMesh3D(model, o.e, { stiffOffset: 0 });
-      for (const f of mesh.faces) pushPoly(f.quad.map((q) => [q[0], q[1] + o.y, q[2] + o.z]), f.collar ? [0.3, 0.28, 0.26] : [0.17, 0.17, 0.19]);
+      const place = o.m ? (q) => CSGM.apply(o.m, q) : (q) => [q[0], q[1] + o.y, q[2] + o.z];
+      for (const f of mesh.faces) pushPoly(f.quad.map(place), f.collar ? [0.3, 0.28, 0.26] : [0.17, 0.17, 0.19]);
     }
     // матовое стекло (покупное) — в рамке на плоскости плёнки; кассета — между плитой задника и рамкой
-    for (const poly of Cam.groundGlassDummy(camera, camExt, folded, { holder: holderIn }).polygons) pushPoly(poly.vertices, [0.8, 0.82, 0.84]);
+    if (!isEnl) for (const poly of Cam.groundGlassDummy(camera, x, folded, { holder: holderIn }).polygons) pushPoly(poly.vertices, [0.8, 0.82, 0.84]);
     if (holderIn) {
-      const h = Cam.holderDummy(camera, camExt, folded);
+      const h = Cam.holderDummy(camera, x, folded);
       for (const poly of h.body.polygons) pushPoly(poly.vertices, [0.1, 0.1, 0.11]);
       for (const poly of h.flap.polygons) pushPoly(poly.vertices, [0.55, 0.12, 0.1]);
     }
     if ($('#cv-fx').checked) {
       // покупной крепёж на своих местах: болты, винты, шайбы, гайки
-      for (const x of Cam.fastenerLayout(camera, camExt, folded, { holder: holderIn })) {
-        if (!x.len) continue;
-        const S = Cam.fastenerSolids(x);
+      for (const fx of Cam.fastenerLayout(camera, x, folded, { holder: holderIn })) {
+        if (!fx.len) continue;
+        const S = Cam.fastenerSolids(fx);
         for (const [k, body] of Object.entries(S)) {
           const col = k === 'nut' || k === 'washer' ? [0.62, 0.64, 0.68] : [0.78, 0.8, 0.83];
           for (const poly of body.polygons) pushPoly(poly.vertices, col);
@@ -761,15 +859,26 @@
     }
     if ($('#cv-lens').checked) {
       // условный объектив — показывает, помещается ли он в сложенную коробку
-      for (const poly of Cam.lensDummy(camera, camExt, folded).polygons) pushPoly(poly.vertices, [0.08, 0.08, 0.09]);
+      for (const poly of Cam.lensDummy(camera, x, folded).polygons) pushPoly(poly.vertices, [0.08, 0.08, 0.09]);
     }
     if (!isField && $('#cv-rail').checked) {
-      if (!camera.railCsg) camera.railCsg = Cam.railCSG(D);
+      if (!camera.railCsg) camera.railCsg = isEnl ? Enl.columnCSG(D) : Cam.railCSG(D);
       for (const poly of camera.railCsg.polygons) pushPoly(poly.vertices, [0.74, 0.76, 0.8]);
+    }
+    let lines = [];
+    if (isEnl) {
+      // условно: доска, лист бумаги, изображение и лучи от углов кадра через объектив
+      const ex = Enl.sceneExtras(camera, x);
+      if ($('#cv-board').checked) {
+        for (const poly of ex.board.polygons) pushPoly(poly.vertices, [0.55, 0.42, 0.3]);
+        for (const poly of ex.paper.polygons) pushPoly(poly.vertices, [0.93, 0.93, 0.9]);
+        for (const poly of ex.image.polygons) pushPoly(poly.vertices, [0.62, 0.62, 0.6]);
+      }
+      if ($('#cv-light').checked) lines = ex.lines;
     }
     const center = [0, 1, 2].map((i) => (min[i] + max[i]) / 2);
     const radius = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * 0.6;
-    v.setData({ tris: new Float32Array(tris), lines: new Float32Array(0), center, radius }, keepCamera);
+    v.setData({ tris: new Float32Array(tris), lines: new Float32Array(lines), lineColor: [1, 0.78, 0.25, 1], center, radius }, keepCamera);
   }
 
   function camPartSTL(part) {
@@ -779,9 +888,9 @@
 
   function camZip() {
     buildCamParts();
-    const files = [];
+    const files = [], dir = camera.dims.style === 'enlarger' ? 'enlarger' : 'camera';
     camera.parts.forEach((p, i) => {
-      for (const f of camPartFiles(p)) files.push({ name: `camera/${String(i + 1).padStart(2, '0')}_${f.name}`, data: f.data });
+      for (const f of camPartFiles(p)) files.push({ name: `${dir}/${String(i + 1).padStart(2, '0')}_${f.name}`, data: f.data });
     });
     const split = camera.parts.filter((p) => p.pieces).map((p) => ({ name: p.name, n: p.pieces.length }));
     files.push({ name: 'README.txt', data: Cam.assemblyText(camera, model, split).replace(/\n/g, '\r\n') });
@@ -806,6 +915,12 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  /** Начало имени файлов изделия: camera_4x5 или enlarger_66. */
+  function camKind() {
+    const cp = camera.params;
+    return cp.camStyle === 'enlarger' ? `enlarger_${cp.enlFormat}` : `camera_${cp.camFormat}`;
   }
 
   function baseName() {
@@ -848,7 +963,7 @@
       btn.disabled = true;
       setTimeout(() => {
         try {
-          download(`camera_${camera.params.camFormat}_${baseName()}.zip`, camZip(), 'application/zip');
+          download(`${camKind()}_${baseName()}.zip`, camZip(), 'application/zip');
         } finally {
           btn.textContent = old;
           btn.disabled = false;
@@ -858,7 +973,7 @@
     'cam-png': () => {
       if (!camViewer) return;
       camViewer.render();
-      $('#gl-cam').toBlob((b) => b && download(`camera_${camera.params.camFormat}_3d.png`, b));
+      $('#gl-cam').toBlob((b) => b && download(`${camKind()}_3d.png`, b));
     },
     'cam-view-reset': () => camViewer && camViewer.resetView(),
     'stl-export': () => {
@@ -894,9 +1009,10 @@
     for (const id of ['#pat-stiff', '#pat-labels', '#print-paper']) $(id).addEventListener('change', () => { dirty.pattern = true; renderActive(); });
     for (const id of ['#stl-mode', '#bed-w', '#bed-h', '#bed-gap', '#bed-diag']) $(id).addEventListener('change', () => { dirty.stl = true; renderActive(); });
     for (const id of ['#v-fabric', '#v-stiff', '#v-edges']) $(id).addEventListener('change', () => model && model.ok && render3D(true));
-    for (const id of ['#cv-bellows', '#cv-rail', '#cv-folded', '#cv-lens', '#cv-holder', '#cv-fx']) $(id).addEventListener('change', () => camera && camera.ok && renderCamScene(true));
+    for (const id of ['#cv-bellows', '#cv-rail', '#cv-folded', '#cv-lens', '#cv-holder', '#cv-fx', '#cv-board', '#cv-light']) $(id).addEventListener('change', () => camera && camera.ok && renderCamScene(true));
     $('#cam-ext').addEventListener('input', (e) => {
-      camExt = Number(e.target.value);
+      if (camera && camera.dims && camera.dims.style === 'enlarger') enlMag = Number(e.target.value);
+      else camExt = Number(e.target.value);
       if (camera && camera.ok) renderCamScene(true);
     });
     // размер стола общий для плашек и деталей камеры

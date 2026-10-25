@@ -8,9 +8,9 @@
  * от объектива к кассете. Верх рельса — y = 0, передняя плоскость передней рамки — z = 0.
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./csg.js'), require('./geometry.js'), require('./i18n.js'));
-  else root.BellowsCamera = factory(root.BellowsCSG, root.BellowsGeometry, root.BellowsI18n);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (K3, Geo, I18n) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./csg.js'), require('./geometry.js'), require('./i18n.js'), require('./enlarger.js'));
+  else root.BellowsCamera = factory(root.BellowsCSG, root.BellowsGeometry, root.BellowsI18n, root.BellowsEnlarger);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (K3, Geo, I18n, Enl) {
   'use strict';
   const tr = I18n.t, num = I18n.num;
   const { CSG, M } = K3;
@@ -55,6 +55,7 @@
   const STYLES = {
     monorail: { get name() { return tr('opt.style.monorail'); } },
     field: { get name() { return tr('opt.style.field'); } },
+    enlarger: { get name() { return tr('opt.style.enlarger'); } }, // фотоувеличитель — enlarger.js
   };
 
   const CAM_DEFAULTS = {
@@ -81,6 +82,7 @@
     camBedW: 220,
     camBedH: 220,
   };
+  Object.assign(CAM_DEFAULTS, Enl.ENL_DEFAULTS);
 
   function normalizeCamParams(input) {
     const p = Object.assign({}, CAM_DEFAULTS);
@@ -106,7 +108,7 @@
     p.camShift = Math.max(0, p.camShift);
     p.camBedW = Math.max(60, p.camBedW);
     p.camBedH = Math.max(60, p.camBedH);
-    return p;
+    return Enl.normalize(p);
   }
 
   // ---------------------------------------------------------------------
@@ -313,6 +315,7 @@
 
   function computeCamera(bm, input) {
     const cp = normalizeCamParams(input);
+    if (cp.camStyle === 'enlarger') return Enl.computeEnlarger(bm, cp);
     const errors = [], warnings = [];
     if (!bm || !bm.ok) return { ok: false, params: cp, errors: [tr('cam.err.bellows')], warnings };
     const c = cp.camClearance;
@@ -803,6 +806,7 @@
   }
 
   function placements(cam, e, folded, opts) {
+    if (cam.dims.style === 'enlarger') return Enl.placements(cam, e, folded, opts);
     if (cam.dims.style === 'field') return fieldPlacements(cam, e, folded, opts);
     const D = cam.dims;
     const lift = opts && opts.holder ? D.holderT : 0; // вставленная кассета приподнимает рамку стекла
@@ -878,7 +882,7 @@
   // Длина подбирается из стандартного ряда по геометрии: болт должен пройти гайку,
   // но не упереться в дно глухого отверстия или в рельс. Тесты проверяют это на телах деталей.
   // ---------------------------------------------------------------------
-  const STD_LEN = { M5: [8, 10, 12, 16, 20, 25, 30, 35, 40], M3: [6, 8, 10, 12, 16, 20, 25, 30, 35, 40, 45, 50] };
+  const STD_LEN = { M5: [8, 10, 12, 16, 20, 25, 30, 35, 40, 45, 50], M3: [6, 8, 10, 12, 16, 20, 25, 30, 35, 40, 45, 50] };
   const THREAD_MIN = { nut: 3.2, M3: 4.5 }; // зацепление: гайка — 4 витка из 5, саморез M3 — 1,5 d
   const SPRING_SOLID = 7; // пружина задника, сжатая вставленной кассетой, не короче этого
 
@@ -899,6 +903,7 @@
    * free — докуда стержень должен проходить свободно, len — подобранная длина.
    */
   function fastenerLayout(cam, e, folded, opts) {
+    if (cam.dims.style === 'enlarger') return Enl.fastenerLayout(cam, e, folded, opts);
     const D = cam.dims, c = D.c, field = D.style === 'field';
     const P = placements(cam, e, folded, opts);
     const at = (m, p) => M.apply(m, p);
@@ -1023,9 +1028,10 @@
     return out;
   }
 
-  const HEAD = { hex: { M5: { r: HW.M5.headAF / 2, h: HW.M5.headH } }, socket: { M5: { r: 4.25, h: 5 }, M3: { r: 2.75, h: 3 } } };
-  const WASHER_R = { M5: 5, M3: 3.5 };
-  const MAJOR = { M5: 5, M3: 3 };
+  const HEAD = { hex: { M5: { r: HW.M5.headAF / 2, h: HW.M5.headH } }, socket: { M5: { r: 4.25, h: 5 }, M3: { r: 2.75, h: 3 } }, rod: {} };
+  const WASHER_R = { M5: 5, M3: 3.5, M6: 6 };
+  const MAJOR = { M5: 5, M3: 3, M6: 6 };
+  const NUT = { M5: { af: HW.M5.nutAF, h: HW.M5.nutH }, M6: { af: 10, h: 5 } };
 
   /**
    * Тела крепежа для показа и проверок: shank — стержень (номинальный Ø), head, washer, nut (гайка — описанным
@@ -1036,12 +1042,10 @@
     const pt = (s) => [x.p[0] + x.d[0] * s, x.p[1] + x.d[1] * s, x.p[2] + x.d[2] * s];
     const cyl = (s0, s1, r, n) => CSG.cylinder(pt(s0), pt(s1), r, n || 24);
     const hd = HEAD[x.kind][x.size];
-    const out = {
-      shank: cyl(o.from || 0, o.to !== undefined ? o.to : x.len, o.r || MAJOR[x.size] / 2),
-      head: cyl(-hd.h, -0.05, hd.r, x.kind === 'hex' ? 6 : 24),
-    };
+    const out = { shank: cyl(o.from || 0, o.to !== undefined ? o.to : x.len, o.r || MAJOR[x.size] / 2) };
+    if (hd) out.head = cyl(-hd.h, -0.05, hd.r, x.kind === 'hex' ? 6 : 24); // у шпильки головки нет
     if (x.washer) out.washer = cyl(0.02, x.washer - 0.02, WASHER_R[x.size]);
-    if (x.nut !== null) out.nut = cyl(x.nut + 0.05, x.nut + HW.M5.nutH - 0.05, HW.M5.nutAF / 2, 6);
+    if (x.nut !== null) { const nt = NUT[x.size]; out.nut = cyl(x.nut + 0.05, x.nut + nt.h - 0.05, nt.af / 2, 6); }
     return out;
   }
 
@@ -1087,6 +1091,7 @@
   /** Где начинается мех в сборке (передняя пластина рамки меха): {y, z}; мех идёт от z до z + e. */
   function bellowsOrigin(cam, e, folded) {
     const D = cam.dims;
+    if (D.style === 'enlarger') return Enl.bellowsOrigin(cam, e);
     if (D.style === 'field') {
       const ee = folded ? D.fb.eMin : e;
       return { y: D.fb.A, z: D.fb.zF(ee) + K.Tf + K.tPlate, e: ee };
@@ -1122,6 +1127,7 @@
   /** Условный объектив (для показа и проверки складывания): цилиндр перед платой. */
   function lensDummy(cam, e, folded) {
     const D = cam.dims;
+    if (D.style === 'enlarger') return Enl.lensDummy(cam, e);
     const len = D.style === 'field' ? D.fb.lensFold : 35;
     const zF = D.style === 'field' ? D.fb.zF(folded ? D.fb.eMin : e) : 0;
     const r = D.shutterD / 2 + 4;
@@ -1443,6 +1449,7 @@
 
   /** Текст README для архива: печать, сборка, юстировка, списки деталей. */
   function assemblyText(cam, bm, split) {
+    if (cam.dims.style === 'enlarger') return Enl.assemblyText(cam, bm, split);
     if (cam.dims.style === 'field') return fieldAssemblyText(cam, bm, split);
     const D = cam.dims, p = cam.params, F = FORMATS[p.camFormat], m = bm.derived.mid;
     const f = (x) => num(Math.round(x * 10) / 10);
@@ -1480,8 +1487,15 @@
     return doc.L.join('\n');
   }
 
+  // увеличитель строится теми же средствами
+  Enl.init({
+    CSG, M, K, HW, FW, COL, RAILS, BOARDS, STD_LEN, THREAD_MIN,
+    box, holeR, cylX, cylY, cylZ, hexPoly, hexX, hexY, hexZ, slot, rrect, fillet, offsetConvex, loft, chamferPrism, circle, ALONG,
+    pickLen, fxLabel, fxName, textDoc, splitNote, computeCamera,
+  });
+
   return {
-    FORMATS, BOARDS, SHUTTERS, RAILS, TRIPOD, CAM_DEFAULTS, K,
+    FORMATS, BOARDS, SHUTTERS, RAILS, TRIPOD, CAM_DEFAULTS, K, Enl,
     normalizeCamParams, computeCamera, placements, printOriented, assemblyText, railCSG, bellowsOrigin, lensDummy, STYLES, FK,
     backRefZ, groundGlassDummy, holderDummy,
     splitForBed, layPiece, invRot, fitsBed, bedFitAngle, sectionSegments, DOVETAIL_L,
