@@ -91,7 +91,7 @@ test('экспорт на английском и польском — без р
       }
       // увеличитель: все три способа компенсации веса, с предупреждениями (короткие мех и колонна, f 50)
       const E = require('../js/enlarger.js');
-      for (const [b, c] of [[{ maxExt: 200 }, { enlColumnLength: 300 }], [{}, { enlFormat: '35', enlRange: 'mag', enlMagMin: 2, enlMagMax: 12, enlBalance: 'spring', enlLed: 'panel' }], [{}, { enlFormat: '66', enlBalance: 'weight', enlMount: 'copal0' }]]) {
+      for (const [b, c] of [[{ maxExt: 200 }, { enlColumnLength: 300 }], [{}, { enlFormat: '35', enlRange: 'mag', enlMagMin: 2, enlMagMax: 12, enlBalance: 'spring', enlLed: 'panel' }], [{}, { enlFormat: '66', enlBalance: 'weight', enlMount: 'copal0' }], [{}, { enlLed: 'lightbox' }]]) {
         const bm = G.computeBellows(b);
         const enl = C.computeCamera(bm, Object.assign({ camStyle: 'enlarger' }, c));
         assert.ok(enl.ok && enl.warnings.length + 1 > 0);

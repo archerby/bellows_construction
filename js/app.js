@@ -129,8 +129,12 @@
       legend: 'enlLight',
       styles: ENL,
       fields: [
-        { key: 'enlLed', type: 'select', options: ['strip', 'panel'] },
-        { key: 'enlLedPitch', hint: true },
+        { key: 'enlLed', type: 'select', options: ['strip', 'panel', 'lightbox'], hint: true },
+        { key: 'enlLedPitch', hint: true, led: ['strip', 'panel'] },
+        { pair: ['enlBoxW', 'enlBoxD'], led: ['lightbox'] },
+        { key: 'enlBoxT', hint: true, led: ['lightbox'] },
+        { pair: ['enlBoxWinW', 'enlBoxWinD'], step: 0.5, led: ['lightbox'] },
+        { key: 'enlBoxRecess', step: 0.5, hint: true, led: ['lightbox'] },
       ],
     },
     {
@@ -263,13 +267,15 @@
     if (f.styles) el.dataset.styles = f.styles.join(' ');
     if (f.range) el.dataset.range = f.range;
     if (f.balance) el.dataset.balance = f.balance;
+    if (f.led) el.dataset.led = f.led.join(' ');
   }
 
   function applyVisibility() {
     const cp = Cam.normalizeCamParams(params);
-    for (const el of $$('#cam-params [data-styles], #cam-params [data-range], #cam-params [data-balance]')) {
+    for (const el of $$('#cam-params [data-styles], #cam-params [data-range], #cam-params [data-balance], #cam-params [data-led]')) {
       const ok = (!el.dataset.styles || el.dataset.styles.split(' ').includes(cp.camStyle)) &&
-        (!el.dataset.range || el.dataset.range === cp.enlRange) && (!el.dataset.balance || el.dataset.balance === cp.enlBalance);
+        (!el.dataset.range || el.dataset.range === cp.enlRange) && (!el.dataset.balance || el.dataset.balance === cp.enlBalance) &&
+        (!el.dataset.led || el.dataset.led.split(' ').includes(cp.enlLed));
       el.hidden = !ok;
     }
   }
@@ -710,7 +716,9 @@
         card(tr('cs.e.mag'), `×${n2(D.mMin)}…×${n2(D.mMax)}`, tr('cs.e.magS', { a: cm(D.mMin), b: cm(D.mMax) })),
         card(tr('cs.e.ext'), `${Math.round(D.eNeed[0])}…${Math.round(D.eNeed[1])}`, tr('cs.e.extS', { a: D.eMinB, b: Math.round(D.eMaxB) })),
         card(tr('cs.e.column'), `${D.colL}`, tr('cs.e.columnS', { rod: D.rodL })),
-        card(tr('cs.e.light'), `${D.aNeed}×${D.aNeed}`, tr('cs.e.lightS', { h: D.light.H, u: Math.round(D.light.U * 100) })),
+        D.isBox
+          ? card(tr('cs.e.box'), `${I18n.num(D.open[0])}×${I18n.num(D.open[1])}`, tr('cs.e.boxS', { nw: Math.ceil(D.light.need[0]), nd: Math.ceil(D.light.need[1]) }))
+          : card(tr('cs.e.light'), `${D.aNeed}×${D.aNeed}`, tr('cs.e.lightS', { h: D.light.H, u: Math.round(D.light.U * 100) })),
         card(tr('cs.e.head'), `${D.Su}×${D.Su}`, tr('cs.e.headS', { g: D.mass.total })),
         partsCard, plasticCard,
       ].join('');
@@ -867,6 +875,9 @@
     }
     let lines = [];
     if (isEnl) {
+      // покупной лайтбокс лицом вниз в ложементе
+      const lb = Enl.boxDummy(camera, x);
+      if (lb) for (const poly of lb.polygons) pushPoly(poly.vertices, [0.12, 0.12, 0.13]);
       // условно: доска, лист бумаги, изображение и лучи от углов кадра через объектив
       const ex = Enl.sceneExtras(camera, x);
       if ($('#cv-board').checked) {

@@ -23,6 +23,7 @@ const edgesUnpaired = (tris) => {
 const CASES = [
   ['4×5, f 150, M39, фрикцион', {}, { camStyle: 'enlarger' }],
   ['6×6, f 80, Copal 1, пружина, колонна 4040', {}, { camStyle: 'enlarger', enlFormat: '66', enlMount: 'copal1', enlRange: 'mag', enlMagMin: 2, enlMagMax: 8, enlBalance: 'spring', enlColumn: '4040' }],
+  ['6×7, f 105, лайтбокс вместо осветителя', {}, { camStyle: 'enlarger', enlFormat: '67', enlRange: 'mag', enlMagMin: 1.5, enlMagMax: 5, enlLed: 'lightbox' }],
   ['35 мм, f 75, противовес, колонна 2020', { frontW: 80, frontH: 80, rearW: 100, rearH: 100, maxExt: 260, pitch: 9 }, { camStyle: 'enlarger', enlFormat: '35', enlFocal: 75, enlRange: 'mag', enlMagMin: 1, enlMagMax: 3, enlBalance: 'weight', enlColumn: '2020', camBoard: 'technika' }],
 ];
 const make = (bp, cp) => { const bm = G.computeBellows(bp); return { bm, enl: C.computeCamera(bm, cp) }; };
@@ -112,7 +113,8 @@ function scene(enl, m) {
     const body = p.csg || (p.csg = p.build());
     (P[p.key] || []).forEach((mm, i) => { const s = body.transform(mm); objs.push({ key: p.key, name: `${p.key}#${i}`, csg: s, b: s.bounds() }); });
   }
-  const col = E.columnCSG(enl.dims), lens = C.lensDummy(enl, m);
+  const col = E.columnCSG(enl.dims), lens = C.lensDummy(enl, m), lb = E.boxDummy(enl, m);
+  if (lb) objs.push({ key: 'лайтбокс', name: 'лайтбокс', csg: lb, b: lb.bounds() });
   objs.push({ key: 'колонна', name: 'колонна', csg: col, b: col.bounds() }, { key: 'объектив', name: 'объектив', csg: lens, b: lens.bounds() });
   return objs;
 }
@@ -213,7 +215,7 @@ function rayTri(o, d, t) {
 }
 
 test('зонд: световая ловушка вентиляции не сквозная по прямой', () => {
-  for (const [title, bp, cp] of CASES) {
+  for (const [title, bp, cp] of CASES.filter((c) => c[2].enlLed !== 'lightbox')) {
     const { enl } = make(bp, cp);
     const D = enl.dims, EK = E.EK, m = D.mMin, P = C.placements(enl, m, false, {});
     const s = D.st(m), yPlate = s.yRT + D.Hb, yTop = yPlate + EK.ledT + EK.ventGap + EK.capTop;
@@ -313,4 +315,46 @@ test('увеличитель: README — все детали, покупное, 
     assert.equal(E.tableRows(enl.dims).length, 9); // шапка и 8 строк
     assert.ok(!/undefined|NaN|\{\w+\}/.test(txt), title + ': пустые подстановки');
   }
+});
+
+test('зонд: лайтбокс в ложементе — свет из окна не выходит наружу по прямой мимо негатива', () => {
+  for (const [title, bp, cp] of CASES.filter((c) => c[2].enlLed === 'lightbox')) {
+    const { enl } = make(bp, cp);
+    const D = enl.dims, EK = E.EK, m = D.mMin, P = C.placements(enl, m, false, {}), s = D.st(m);
+    const keys = enl.parts.map((p) => p.key);
+    for (const k of ['lamp_body', 'led_plate', 'vent_cap']) assert.ok(!keys.includes(k), title + ': лишняя деталь ' + k);
+    const cradle = enl.parts.find((p) => p.key === 'box_cradle').build().transform(P.box_cradle[0]);
+    const all = cradle.union(E.boxDummy(enl, m));
+    // свет идёт из окна лайтбокса; единственная щель — фетровый зазор между лицом лайтбокса и дном ложемента
+    const y = s.yRT + EK.flangeT + EK.felt / 2, tris = all.toTrianglesRaw();
+    const [ox, oz] = D.open;
+    let leaks = 0, n = 0;
+    for (let t = 0; t < 1; t += 0.05) for (const [x, z] of [[-ox / 2 + ox * t, oz / 2], [-ox / 2 + ox * t, -oz / 2], [ox / 2, -oz / 2 + oz * t], [-ox / 2, -oz / 2 + oz * t]]) {
+      for (let az = 0; az < 360; az += 15) for (const el of [0, 10, 30]) {
+        const e = (el * Math.PI) / 180, a = (az * Math.PI) / 180, d = [Math.cos(e) * Math.cos(a), Math.sin(e), Math.cos(e) * Math.sin(a)];
+        n++;
+        if (!tris.some((tr) => rayTri([x, y, z], d, tr) > 1e-6)) leaks++;
+      }
+    }
+    assert.ok(n > 1000);
+    assert.equal(leaks, 0, title + ': прямых лучей наружу');
+    // лайтбокс лежит в ложементе: стенки вокруг, окно над окном дна
+    const cb = cradle.bounds(), lb = E.boxDummy(enl, m).bounds();
+    assert.ok(cb.min[0] < lb.min[0] && cb.max[0] > lb.max[0] && cb.min[2] < lb.min[2] && cb.max[2] > lb.max[2]);
+    assert.ok(Math.abs(lb.min[1] - (s.yRT + EK.flangeT + EK.felt)) < 1e-9);
+  }
+});
+
+test('лайтбокс: окно меньше нужного поля — предупреждение; в покупном — лайтбокс, фетр, таймер, без ленты и рассеивателя', () => {
+  const small = make({}, { camStyle: 'enlarger', enlLed: 'lightbox' }).enl; // 4×5″ не помещается в окно 95×105
+  assert.ok(small.warnings.some((w) => /Окно лайтбокса/.test(w)), small.warnings.join(' | '));
+  const { enl } = make({}, { camStyle: 'enlarger', enlFormat: '67', enlLed: 'lightbox' });
+  const names = enl.hardware.map((h) => h.name).join(' | ');
+  assert.match(names, /Лайтбокс/);
+  assert.match(names, /фетр/);
+  assert.doesNotMatch(names, /Светодиодная лента|оргстекло|Блок питания/);
+  assert.ok(!enl.fasteners.some((x) => x.key === 'eLed'));
+  // зазор рассеиватель–плёнка учитывает дно ложемента, фетр и утопленное окно
+  const D = enl.dims, EK = E.EK;
+  assert.ok(Math.abs(D.g - (D.slotH + EK.Tr + EK.flangeT + EK.felt + enl.params.enlBoxRecess - (EK.tLb - EK.rec))) < 1e-9);
 });
